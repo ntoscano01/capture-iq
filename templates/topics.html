@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% block title %}Topics — CaptureIQ{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <i class="bi bi-tags text-secondary fs-5"></i>
+  <h1>Topics</h1>
+  <span class="badge bg-secondary ms-2">{{ rows|length }} shown</span>
+  {% if favorited == '1' %}
+    <span class="badge bg-warning text-dark ms-1"><i class="bi bi-star-fill"></i> Favorites</span>
+  {% endif %}
+  {% if topic_status == 'nominated' %}
+    <span class="badge ms-1" style="background:#3dd68c; color:#003d1f"><i class="bi bi-hand-thumbs-up-fill"></i> Nominated</span>
+  {% elif topic_status == 'passed' %}
+    <span class="badge bg-danger ms-1"><i class="bi bi-hand-thumbs-down-fill"></i> Passed</span>
+  {% endif %}
+</div>
+
+<form method="get" class="filter-bar">
+  <div class="row g-2 align-items-end">
+    <div class="col-md-4">
+      <label class="form-label mb-1 fw-semibold" style="font-size:.75rem">Keyword</label>
+      <input type="text" name="keyword" class="form-control form-control-sm"
+             placeholder="Search topic title or description…" value="{{ keyword }}">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label mb-1 fw-semibold" style="font-size:.75rem">Agency</label>
+      <select name="agency" class="form-select form-select-sm">
+        <option value="">All Agencies</option>
+        {% for a in filters.agencies %}
+          <option value="{{ a }}" {{ 'selected' if agency == a }}>{{ a }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label mb-1 fw-semibold" style="font-size:.75rem">Phase</label>
+      <select name="phase" class="form-select form-select-sm">
+        <option value="">All Phases</option>
+        {% for p in filters.phases %}
+          <option value="{{ p }}" {{ 'selected' if phase == p }}>{{ p }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label mb-1 fw-semibold" style="font-size:.75rem">Source</label>
+      <select name="source" class="form-select form-select-sm">
+        <option value="">All Sources</option>
+        {% for s in filters.sources %}
+          <option value="{{ s }}" {{ 'selected' if source == s }}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2 d-flex gap-1">
+      <button type="submit" class="btn btn-secondary btn-sm w-100"><i class="bi bi-funnel"></i> Filter</button>
+      <a href="{{ url_for('topics') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-x"></i></a>
+    </div>
+  </div>
+</form>
+
+<div class="table-card">
+  <table class="table table-hover align-middle">
+    <thead>
+      <tr>
+        <th style="width:36px"></th>
+        <th style="width:72px"></th>
+        <th>Topic #</th>
+        <th>Title</th>
+        <th>Agency</th>
+        <th>Branch</th>
+        <th>Phase</th>
+        <th>Source</th>
+        <th>Link</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>
+          <form method="post" action="{{ url_for('toggle_topic_favorite', topic_id=row.id) }}">
+            <button type="submit" class="fav-btn">
+              <i class="bi {{ 'bi-star-fill' if row.favorited else 'bi-star' }}"></i>
+            </button>
+          </form>
+        </td>
+        <td>
+          <div class="d-flex gap-1">
+            <form method="post" action="{{ url_for('set_topic_status', topic_id=row.id) }}">
+              <input type="hidden" name="status" value="nominated">
+              <button type="submit" class="status-btn"
+                      title="{{ 'Un-nominate' if row.topic_status == 'nominated' else 'Nominate' }}"
+                      style="color:{{ '#1aab6d' if row.topic_status == 'nominated' else '#adb5bd' }}">
+                <i class="bi bi-hand-thumbs-up-fill"></i>
+              </button>
+            </form>
+            <form method="post" action="{{ url_for('set_topic_status', topic_id=row.id) }}">
+              <input type="hidden" name="status" value="passed">
+              <button type="submit" class="status-btn"
+                      title="{{ 'Un-pass' if row.topic_status == 'passed' else 'Pass' }}"
+                      style="color:{{ '#dc3545' if row.topic_status == 'passed' else '#adb5bd' }}">
+                <i class="bi bi-hand-thumbs-down-fill"></i>
+              </button>
+            </form>
+          </div>
+        </td>
+        <td><code>{{ row.topic_number or '—' }}</code></td>
+        <td>
+          <a href="{{ url_for('topic_detail', topic_id=row.id) }}"
+             class="fw-semibold text-decoration-none">
+            {{ row.title[:80] }}{% if row.title|length > 80 %}…{% endif %}
+          </a>
+          {% if row.keywords %}
+            <br><small class="text-muted">{{ row.keywords[:80] }}{% if row.keywords|length > 80 %}…{% endif %}</small>
+          {% elif row.tech_contact %}
+            <br><small class="text-muted"><i class="bi bi-person"></i> {{ row.tech_contact[:50] }}</small>
+          {% endif %}
+        </td>
+        <td>{{ row.agency or '—' }}</td>
+        <td>{{ row.branch or '—' }}</td>
+        <td>
+          {% if row.phase %}
+            <span class="badge bg-primary">{{ row.phase }}</span>
+          {% else %}—{% endif %}
+        </td>
+        <td>
+          {% if row.itar %}<span class="badge bg-danger me-1" title="ITAR">ITAR</span>{% endif %}
+          <span class="badge bg-secondary">{{ row.source or '—' }}</span>
+        </td>
+        <td style="white-space:nowrap">
+          <a href="{{ url_for('topic_detail', topic_id=row.id) }}"
+             class="btn btn-outline-primary btn-sm py-0 me-1" title="View details">
+            <i class="bi bi-file-text"></i>
+          </a>
+          {% if row.url %}
+            <button type="button"
+                    class="btn btn-outline-secondary btn-sm py-0 me-1"
+                    onclick="copyLink('{{ row.url }}', this)"
+                    title="Copy topic link">
+              <i class="bi bi-share"></i>
+            </button>
+            <a href="{{ row.url }}" target="_blank" rel="noopener"
+               class="btn btn-outline-secondary btn-sm py-0" title="Open on sbir.gov">
+              <i class="bi bi-box-arrow-up-right"></i>
+            </a>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="7" class="text-center text-muted py-5">
+          <i class="bi bi-tags fs-2 d-block mb-2"></i>
+          No topics yet. <a href="{{ url_for('ingest_page') }}">Run a Navy SBIR ingest</a> to pull topics.
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if rows|length == per_page %}
+<div class="d-flex justify-content-center mt-3">
+  <nav><ul class="pagination pagination-sm">
+    {% if page > 1 %}
+    <li class="page-item">
+      <a class="page-link" href="?page={{ page-1 }}&keyword={{ keyword }}&agency={{ agency }}&phase={{ phase }}">« Prev</a>
+    </li>
+    {% endif %}
+    <li class="page-item active"><span class="page-link">{{ page }}</span></li>
+    <li class="page-item">
+      <a class="page-link" href="?page={{ page+1 }}&keyword={{ keyword }}&agency={{ agency }}&phase={{ phase }}">Next »</a>
+    </li>
+  </ul></nav>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<style>
+  .status-btn {
+    border: none; background: none; padding: 0;
+    cursor: pointer; font-size: 1rem; line-height: 1;
+  }
+  .status-btn:hover { opacity: .7; }
+</style>
+<script>
+function copyLink(url, btn) {
+  navigator.clipboard.writeText(url).then(function() {
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<i class="bi bi-check-lg"></i>';
+    btn.classList.add('btn-success');
+    btn.classList.remove('btn-outline-secondary');
+    setTimeout(function() {
+      btn.innerHTML = orig;
+      btn.classList.remove('btn-success');
+      btn.classList.add('btn-outline-secondary');
+    }, 1800);
+  }).catch(function() {
+    alert('Link: ' + url);
+  });
+}
+</script>
+{% endblock %}

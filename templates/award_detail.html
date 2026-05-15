@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}{{ award.title[:60] }} — SBIR Pipeline{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <a href="{{ url_for('awards') }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i></a>
+  <h1 class="text-truncate" style="max-width:70vw">{{ award.title }}</h1>
+</div>
+
+<div class="row g-3">
+  <div class="col-md-4">
+    <div class="card">
+      <div class="card-header bg-white fw-semibold">Award Details</div>
+      <div class="card-body p-0">
+        <table class="table table-borderless mb-0" style="font-size:.88rem">
+          <tr><th class="text-muted ps-3" style="width:40%">Company</th><td>{{ award.company or '—' }}</td></tr>
+          <tr><th class="text-muted ps-3">PI</th><td>{{ award.pi_name or '—' }}</td></tr>
+          <tr><th class="text-muted ps-3">Agency</th><td>{{ award.agency or '—' }}</td></tr>
+          <tr><th class="text-muted ps-3">Branch</th><td>{{ award.branch or '—' }}</td></tr>
+          <tr><th class="text-muted ps-3">Phase</th>
+            <td><span class="badge bg-primary">{{ award.phase or '—' }}</span></td></tr>
+          <tr><th class="text-muted ps-3">Program</th><td>{{ award.program or '—' }}</td></tr>
+          <tr><th class="text-muted ps-3">Year</th><td>{{ award.award_year or '—' }}</td></tr>
+          <tr><th class="text-muted ps-3">Amount</th>
+            <td class="fw-bold text-success">
+              {% if award.amount %}${{ "{:,.0f}".format(award.amount) }}{% else %}—{% endif %}
+            </td></tr>
+          <tr><th class="text-muted ps-3">Keywords</th><td>{{ award.keywords or '—' }}</td></tr>
+          <tr><th class="text-muted ps-3">Source</th>
+            <td><span class="badge bg-secondary">{{ award.source or '—' }}</span></td></tr>
+          {% if award.url %}
+          <tr><th class="text-muted ps-3">Link</th>
+            <td><a href="{{ award.url }}" target="_blank"><i class="bi bi-box-arrow-up-right"></i> View</a></td></tr>
+          {% endif %}
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-8">
+    <div class="card">
+      <div class="card-header bg-white fw-semibold">Abstract</div>
+      <div class="card-body" style="white-space:pre-wrap; font-size:.88rem">
+        {{ award.abstract or 'No abstract available.' }}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

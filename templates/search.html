@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}Search — SBIR Pipeline{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <i class="bi bi-search text-dark fs-5"></i>
+  <h1>Full-Text Search</h1>
+</div>
+
+<form method="get" class="mb-4">
+  <div class="input-group input-group-lg" style="max-width:700px">
+    <input type="text" name="q" class="form-control" placeholder="Search solicitations, awards, topics…"
+           value="{{ keyword }}" autofocus>
+    <button type="submit" class="btn btn-primary px-4">
+      <i class="bi bi-search"></i> Search
+    </button>
+  </div>
+  {% if keyword %}
+    <div class="mt-2 text-muted" style="font-size:.85rem">
+      Showing results for <strong>"{{ keyword }}"</strong>
+    </div>
+  {% endif %}
+</form>
+
+{% if results %}
+  {% set total = results.solicitations|length + results.awards|length + results.topics|length %}
+  <div class="mb-3">
+    <span class="badge bg-dark">{{ total }} total results</span>
+    <span class="badge bg-primary ms-1">{{ results.solicitations|length }} solicitations</span>
+    <span class="badge bg-success ms-1">{{ results.awards|length }} awards</span>
+    <span class="badge bg-secondary ms-1">{{ results.topics|length }} topics</span>
+  </div>
+
+  <!-- Solicitations -->
+  {% if results.solicitations %}
+  <div class="card table-card mb-3">
+    <div class="card-header bg-white fw-semibold">
+      <i class="bi bi-file-earmark-text text-primary me-1"></i> Solicitations
+    </div>
+    <table class="table table-hover mb-0" style="font-size:.88rem">
+      <thead><tr><th>Title</th><th>Agency</th><th>Phase</th><th>Close Date</th></tr></thead>
+      <tbody>
+        {% for r in results.solicitations %}
+        <tr>
+          <td>
+            <a href="{{ url_for('solicitation_detail', sol_id=r.id) }}" class="fw-semibold text-decoration-none">
+              {{ r.title[:80] }}{% if r.title|length > 80 %}…{% endif %}
+            </a>
+          </td>
+          <td>{{ r.agency or '—' }}</td>
+          <td>
+            {% if r.phase %}<span class="badge bg-primary">{{ r.phase }}</span>{% else %}—{% endif %}
+          </td>
+          <td>{{ r.date_field or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <!-- Awards -->
+  {% if results.awards %}
+  <div class="card table-card mb-3">
+    <div class="card-header bg-white fw-semibold">
+      <i class="bi bi-trophy text-success me-1"></i> Awards
+    </div>
+    <table class="table table-hover mb-0" style="font-size:.88rem">
+      <thead><tr><th>Title</th><th>Agency</th><th>Phase</th><th>Year</th></tr></thead>
+      <tbody>
+        {% for r in results.awards %}
+        <tr>
+          <td>
+            <a href="{{ url_for('award_detail', award_id=r.id) }}" class="fw-semibold text-decoration-none">
+              {{ r.title[:80] }}{% if r.title|length > 80 %}…{% endif %}
+            </a>
+          </td>
+          <td>{{ r.agency or '—' }}</td>
+          <td>{% if r.phase %}<span class="badge bg-success">{{ r.phase }}</span>{% else %}—{% endif %}</td>
+          <td>{{ r.date_field or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <!-- Topics -->
+  {% if results.topics %}
+  <div class="card table-card mb-3">
+    <div class="card-header bg-white fw-semibold">
+      <i class="bi bi-tags text-secondary me-1"></i> Topics
+    </div>
+    <table class="table table-hover mb-0" style="font-size:.88rem">
+      <thead><tr><th>Title</th><th>Agency</th><th>Phase</th></tr></thead>
+      <tbody>
+        {% for r in results.topics %}
+        <tr>
+          <td>{{ r.title[:80] }}{% if r.title|length > 80 %}…{% endif %}</td>
+          <td>{{ r.agency or '—' }}</td>
+          <td>{% if r.phase %}<span class="badge bg-secondary">{{ r.phase }}</span>{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {% if total == 0 %}
+  <div class="text-center text-muted py-5">
+    <i class="bi bi-search fs-2 d-block mb-2"></i>
+    No results found for <strong>"{{ keyword }}"</strong>.<br>
+    Try different keywords or <a href="{{ url_for('ingest_page') }}">ingest more data</a>.
+  </div>
+  {% endif %}
+
+{% elif keyword %}
+  <div class="text-center text-muted py-5">
+    <i class="bi bi-hourglass fs-2 d-block mb-2"></i>
+    Searching…
+  </div>
+{% else %}
+  <div class="text-center text-muted py-5">
+    <i class="bi bi-search fs-2 d-block mb-2"></i>
+    Enter a keyword above to search across all stored SBIR data.
+  </div>
+{% endif %}
+{% endblock %}

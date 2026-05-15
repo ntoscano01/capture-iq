@@ -1,0 +1,313 @@
+{% extends "base.html" %}
+{% block title %}Ingest Data — SBIR Pipeline{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <i class="bi bi-cloud-download text-primary fs-5"></i>
+  <h1>Ingest Data</h1>
+</div>
+
+<div class="row g-3">
+
+  <!-- SBIR.gov Topics -->
+  <div class="col-md-6">
+    <div class="card h-100 border-success">
+      <div class="card-header bg-success text-white fw-semibold d-flex align-items-center gap-2">
+        <img src="https://www.sbir.gov/favicon.ico" style="width:18px;height:18px;filter:brightness(10)" onerror="this.style.display='none'">
+        SBIR.gov — Topics
+        <span class="badge bg-light text-dark ms-auto">REST API</span>
+      </div>
+      <div class="card-body">
+        <p class="text-muted" style="font-size:.85rem">
+          Pull open solicitation <strong>topics</strong> from SBIR.gov, including full descriptions,
+          objectives, and phase details. Covers NASA, DOD, NIH, DOE, and all other agencies.
+        </p>
+        <form method="post" action="{{ url_for('ingest_sbir_topics') }}">
+          <div class="row g-2">
+            <div class="col-6">
+              <label class="form-label fw-semibold" style="font-size:.8rem">Agency</label>
+              <input type="text" name="agency" class="form-control form-control-sm"
+                     placeholder="e.g. NASA, DOD, NIH">
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold" style="font-size:.8rem">Phase</label>
+              <select name="phase" class="form-select form-select-sm">
+                <option value="">Any Phase</option>
+                <option value="1">Phase I</option>
+                <option value="2">Phase II</option>
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold" style="font-size:.8rem">Year</label>
+              <input type="text" name="year" class="form-control form-control-sm"
+                     placeholder="e.g. 2026">
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold" style="font-size:.8rem">Keyword</label>
+              <input type="text" name="keyword" class="form-control form-control-sm"
+                     placeholder="Optional filter">
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold" style="font-size:.8rem">Status</label>
+              <select name="status" class="form-select form-select-sm">
+                <option value="open" selected>Open only</option>
+                <option value="">All statuses</option>
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold" style="font-size:.8rem">Max Records</label>
+              <select name="max_records" class="form-select form-select-sm">
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100" selected>100</option>
+                <option value="250">250</option>
+                <option value="500">500</option>
+              </select>
+            </div>
+            <div class="col-12">
+              <div class="form-check form-switch mt-1">
+                <input class="form-check-input" type="checkbox" name="fetch_details"
+                       value="1" id="fetch_details_chk" checked>
+                <label class="form-check-label" for="fetch_details_chk" style="font-size:.82rem">
+                  Fetch full topic detail <span class="text-muted">(slower but richer data)</span>
+                </label>
+              </div>
+            </div>
+          </div>
+          <button type="submit" class="btn btn-success w-100 mt-3">
+            <i class="bi bi-cloud-download"></i> Ingest SBIR.gov Topics
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- DoD SBIR/STTR Portal -->
+  <div class="col-md-6">
+    <div class="card h-100 border-primary">
+      <div class="card-header bg-primary text-white fw-semibold d-flex align-items-center gap-2">
+        <i class="bi bi-shield-fill-check"></i>
+        DoD SBIR/STTR — dodsbirsttr.mil
+        <span class="badge bg-warning text-dark ms-auto">JSON API</span>
+      </div>
+      <div class="card-body">
+        <p class="text-muted" style="font-size:.85rem">
+          Pulls topics directly from the DoD SBIR/STTR Innovation Portal (DSIP) REST API.
+          Enter the BAA identifier from the portal URL
+          (e.g. <code>DOD_SBIR_2026_P1_CBZ</code>).
+        </p>
+        <div class="alert alert-light border py-2 mb-3" style="font-size:.8rem">
+          <strong>Portal URL pattern:</strong><br>
+          <code>https://www.dodsbirsttr.mil/topics-app/?baa=<span class="text-primary">BAA_ID</span></code>
+        </div>
+        <form method="post" action="{{ url_for('ingest_dod') }}">
+          <div class="mb-2">
+            <label class="form-label fw-semibold" style="font-size:.8rem">BAA Identifier <span class="text-danger">*</span></label>
+            <input type="text" name="baa" class="form-control form-control-sm"
+                   value="DOD_SBIR_2026_P1_CBZ" required
+                   placeholder="e.g. DOD_SBIR_2026_P1_CBZ">
+            <div class="form-text">Copy from the <code>?baa=</code> parameter in the portal URL.</div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label fw-semibold" style="font-size:.8rem">Keyword filter (optional)</label>
+            <input type="text" name="keyword" class="form-control form-control-sm"
+                   placeholder="Filter topics by keyword after fetching">
+          </div>
+          <div class="mb-2">
+            <label class="form-label fw-semibold" style="font-size:.8rem">Max Topics</label>
+            <select name="max_records" class="form-select form-select-sm">
+              <option value="50">50</option>
+              <option value="100">100</option>
+              <option value="200" selected>200</option>
+              <option value="500">500 (all)</option>
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary w-100 mt-1">
+            <i class="bi bi-cloud-download"></i> Ingest DoD Topics
+          </button>
+        </form>
+        <hr class="my-2">
+        <button class="btn btn-outline-secondary btn-sm w-100"
+                onclick="probeEndpoints()">
+          <i class="bi bi-stethoscope"></i> Diagnose API Endpoints
+        </button>
+        <div id="probe-result" class="mt-2" style="font-size:.78rem;display:none"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Navy SBIR -->
+  <div class="col-md-6">
+    <div class="card h-100" style="border-color:#003087">
+      <div class="card-header fw-semibold d-flex align-items-center gap-2"
+           style="background:#003087; color:#fff">
+        <i class="bi bi-tsunami"></i>
+        Navy SBIR — navysbir.com
+        <span class="badge bg-warning text-dark ms-auto">Web Scraper</span>
+      </div>
+      <div class="card-body">
+        <p class="text-muted" style="font-size:.85rem">
+          Scrapes full BAA topic details from <strong>navysbir.com</strong>, including
+          Objective, Description, Phase I/II/III, Keywords, Tech Areas, and CMMC level.
+        </p>
+        <form method="post" action="{{ url_for('ingest_navy') }}">
+          <div class="mb-2">
+            <label class="form-label fw-semibold" style="font-size:.8rem">Topics Listing URL</label>
+            <input type="url" name="topics_url" class="form-control form-control-sm"
+                   value="https://www.navysbir.com/topics26_1.htm"
+                   placeholder="https://www.navysbir.com/topics26_1.htm">
+            <div class="form-text">Update this URL when a new BAA is released (e.g. topics26_2.htm).</div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label fw-semibold" style="font-size:.8rem">Max Topics</label>
+            <select name="max_topics" class="form-select form-select-sm">
+              <option value="10">10 (test run)</option>
+              <option value="25">25</option>
+              <option value="50">50</option>
+              <option value="100" selected>100 (all current)</option>
+              <option value="200">200</option>
+            </select>
+          </div>
+          <button type="submit" class="btn w-100 mt-1" style="background:#003087; color:#fff">
+            <i class="bi bi-cloud-download"></i> Ingest Navy SBIR Topics
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Active Jobs -->
+  <div class="col-md-6">
+    <div class="card h-100">
+      <div class="card-header bg-white fw-semibold d-flex align-items-center gap-2">
+        <i class="bi bi-activity text-warning"></i> Active Jobs
+        <button class="btn btn-outline-secondary btn-sm ms-auto py-0" onclick="location.reload()">
+          <i class="bi bi-arrow-clockwise"></i> Refresh
+        </button>
+      </div>
+      <div class="card-body">
+        {% if jobs %}
+          {% for jid, job in jobs.items() %}
+          <div class="border rounded p-2 mb-2" style="font-size:.85rem">
+            <div class="d-flex align-items-center gap-2">
+              {% if job.status == 'running' %}
+                <span class="spinner-border spinner-border-sm text-primary"></span>
+                <strong>Running</strong>
+              {% elif job.status == 'done' %}
+                <i class="bi bi-check-circle-fill text-success fs-5"></i>
+                <strong>Done</strong>
+              {% else %}
+                <i class="bi bi-x-circle-fill text-danger fs-5"></i>
+                <strong>Error</strong>
+              {% endif %}
+              <span class="badge bg-secondary">{{ job.source }}</span>
+            </div>
+            {% if job.added is defined %}
+            <div class="mt-1">
+              <span class="text-success"><i class="bi bi-plus-circle"></i> {{ job.added }} added</span>
+              &nbsp;
+              <span class="text-info"><i class="bi bi-arrow-repeat"></i> {{ job.updated }} updated</span>
+            </div>
+            {% endif %}
+            {% if job.errors %}
+            <div class="text-danger mt-1" style="font-size:.78rem">
+              Warnings: {{ job.errors|join('; ') }}
+            </div>
+            {% endif %}
+            <div class="text-muted mt-1" style="font-size:.75rem">
+              Started: {{ job.started[:16] if job.started else '—' }}
+            </div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="text-center text-muted py-4">
+            <i class="bi bi-check-all fs-2 d-block mb-2"></i>
+            No active jobs. Start an ingestion above.
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Ingest Log -->
+{% if recent_logs %}
+<div class="card table-card mt-3">
+  <div class="card-header bg-white fw-semibold">
+    <i class="bi bi-journal-text text-muted me-1"></i> Ingestion History
+  </div>
+  <table class="table table-hover mb-0" style="font-size:.85rem">
+    <thead><tr><th>Source</th><th>Added</th><th>Updated</th><th>Errors</th><th>Started</th><th>Finished</th><th></th></tr></thead>
+    <tbody>
+      {% for log in recent_logs %}
+      <tr>
+        <td><span class="badge bg-secondary">{{ log.source }}</span></td>
+        <td><span class="text-success">+{{ log.records_added }}</span></td>
+        <td><span class="text-info">~{{ log.records_updated }}</span></td>
+        <td>
+          {% if log.errors %}
+            <span class="text-danger" title="{{ log.errors }}">
+              <i class="bi bi-exclamation-circle"></i> Yes
+            </span>
+          {% else %}
+            <span class="text-success"><i class="bi bi-check"></i></span>
+          {% endif %}
+        </td>
+        <td class="text-muted">{{ log.started_at[:16] if log.started_at else '—' }}</td>
+        <td class="text-muted">{{ log.finished_at[:16] if log.finished_at else '—' }}</td>
+        <td>
+          <form method="post" action="{{ url_for('delete_ingest_log', log_id=log.id) }}"
+                onsubmit="return confirm('Remove this log entry?')">
+            <button type="submit" class="btn btn-outline-danger btn-sm py-0 px-1"
+                    title="Remove this entry">
+              <i class="bi bi-trash3"></i>
+            </button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Auto-refresh if jobs are running
+  {% if jobs %}
+  const hasRunning = {{ 'true' if jobs.values()|selectattr('status','eq','running')|list else 'false' }};
+  if (hasRunning) { setTimeout(() => location.reload(), 4000); }
+  {% endif %}
+
+  async function probeEndpoints() {
+    const baaInput = document.querySelector('input[name="baa"]');
+    const baa = baaInput ? baaInput.value : 'DOD_SBIR_2026_P1_CBZ';
+    const el = document.getElementById('probe-result');
+    el.style.display = 'block';
+    el.innerHTML = '<span class="text-muted"><span class="spinner-border spinner-border-sm me-1"></span>Probing endpoints…</span>';
+    try {
+      const resp = await fetch(`/api/dod/probe?baa=${encodeURIComponent(baa)}`);
+      const data = await resp.json();
+      let html = '<table class="table table-sm table-bordered mt-1 mb-0">';
+      html += '<thead><tr><th>Endpoint</th><th>Status</th></tr></thead><tbody>';
+      for (const [url, info] of Object.entries(data.endpoints)) {
+        const short = url.replace('https://www.dodsbirsttr.mil', '');
+        const ok = info.status === 200;
+        const err = info.error || '';
+        html += `<tr>
+          <td><code style="font-size:.72rem">${short}</code></td>
+          <td class="${ok ? 'text-success' : 'text-danger'}">
+            ${ok ? '✓ ' : '✗ '}${info.status}${err ? ': ' + err.substring(0,60) : ''}
+          </td>
+        </tr>`;
+      }
+      html += '</tbody></table>';
+      el.innerHTML = html;
+    } catch(e) {
+      el.innerHTML = `<span class="text-danger">Probe failed: ${e}</span>`;
+    }
+  }
+</script>
+{% endblock %}

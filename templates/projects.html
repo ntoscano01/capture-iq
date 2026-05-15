@@ -1,0 +1,232 @@
+{% extends "base.html" %}
+{% block title %}Projects — SBIR Capture{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <i class="bi bi-folder2-open text-primary fs-5"></i>
+  <h1>SBIR Capture — Projects</h1>
+  <span class="badge bg-secondary ms-2">{{ rows|length }} project{{ 's' if rows|length != 1 }}</span>
+  <button class="btn btn-primary btn-sm ms-auto" data-bs-toggle="modal" data-bs-target="#newProjectModal">
+    <i class="bi bi-plus-lg"></i> New Project
+  </button>
+</div>
+
+<!-- Stat row -->
+<div class="row g-2 mb-3">
+  {% set stage_colors = {
+    'Identified': 'secondary',
+    'Qualified': 'info',
+    'Q&A with Government': 'warning',
+    'Technical Exchange with Customer': 'warning',
+    'In Progress': 'primary',
+    'Submitted': 'purple',
+    'Awarded': 'success',
+    'No Pursue': 'danger'
+  } %}
+  <div class="col-6 col-md-2">
+    <div class="card stat-card text-center" style="cursor:pointer" onclick="filterStage('')">
+      <div class="card-body py-2">
+        <div class="stat-number" style="font-size:1.5rem">{{ capture_stats.total }}</div>
+        <div class="stat-label">Total</div>
+      </div>
+    </div>
+  </div>
+  {% for s in capture_stats.by_stage %}
+  <div class="col-6 col-md-2">
+    <div class="card stat-card text-center" style="cursor:pointer" onclick="filterStage('{{ s.stage }}')">
+      <div class="card-body py-2">
+        <div class="stat-number" style="font-size:1.5rem; color: inherit">{{ s.cnt }}</div>
+        <div class="stat-label">{{ s.stage }}</div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Filter bar -->
+<form method="get" class="filter-bar" id="filterForm">
+  <div class="row g-2 align-items-end">
+    <div class="col-md-4">
+      <label class="form-label mb-1 fw-semibold" style="font-size:.75rem">Keyword</label>
+      <input type="text" name="keyword" class="form-control form-control-sm"
+             placeholder="Search project name or description…" value="{{ keyword }}">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label mb-1 fw-semibold" style="font-size:.75rem">Stage</label>
+      <select name="stage" class="form-select form-select-sm" id="stageFilter">
+        <option value="">All Stages</option>
+        {% for s in stages %}
+          <option value="{{ s }}" {{ 'selected' if stage == s }}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2 d-flex gap-1">
+      <button type="submit" class="btn btn-secondary btn-sm w-100"><i class="bi bi-funnel"></i> Filter</button>
+      <a href="{{ url_for('projects') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-x"></i></a>
+    </div>
+  </div>
+</form>
+
+<!-- Project cards -->
+{% if rows %}
+<div class="row g-3">
+  {% for p in rows %}
+  {% set pct = ((p.checklist_done / p.checklist_total * 100) | int) if p.checklist_total > 0 else 0 %}
+  <div class="col-md-6 col-xl-4">
+    <div class="card h-100" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.08)">
+      <div class="card-body">
+        <!-- Stage badge + title -->
+        <div class="d-flex align-items-start gap-2 mb-2">
+          <div class="flex-grow-1">
+            <a href="{{ url_for('project_detail', project_id=p.id) }}"
+               class="fw-semibold text-decoration-none" style="color:var(--navy); font-size:.95rem">
+              {{ p.name }}
+            </a>
+          </div>
+          <span class="badge stage-badge stage-{{ p.stage | replace(' ', '-') | replace('&', '') | lower }}">
+            {{ p.stage }}
+          </span>
+        </div>
+
+        <!-- Linked topic -->
+        {% if p.topic_title %}
+        <div class="mb-2" style="font-size:.8rem">
+          <i class="bi bi-tags text-muted me-1"></i>
+          <span class="text-muted">{{ p.topic_number or '' }}</span>
+          <span class="text-muted ms-1">{{ p.topic_title[:60] }}{% if p.topic_title|length > 60 %}…{% endif %}</span>
+        </div>
+        {% endif %}
+
+        <!-- Meta row -->
+        <div class="d-flex gap-3 mb-2" style="font-size:.78rem; color:#6c757d">
+          {% if p.lead %}
+          <span><i class="bi bi-person me-1"></i>{{ p.lead }}</span>
+          {% endif %}
+          {% if p.due_date %}
+          <span><i class="bi bi-calendar3 me-1"></i>{{ p.due_date }}</span>
+          {% endif %}
+          <span><i class="bi bi-paperclip me-1"></i>{{ p.file_count }} file{{ 's' if p.file_count != 1 }}</span>
+        </div>
+
+        <!-- Checklist progress -->
+        {% if p.checklist_total > 0 %}
+        <div class="mb-1" style="font-size:.75rem; color:#6c757d">
+          Checklist: {{ p.checklist_done }}/{{ p.checklist_total }}
+        </div>
+        <div class="progress mb-2" style="height:5px">
+          <div class="progress-bar {{ 'bg-success' if pct == 100 else 'bg-primary' }}"
+               style="width:{{ pct }}%"></div>
+        </div>
+        {% endif %}
+      </div>
+      <div class="card-footer bg-white border-top-0 d-flex justify-content-between align-items-center py-2">
+        <small class="text-muted">Updated {{ p.updated_at[:10] if p.updated_at else '—' }}</small>
+        <a href="{{ url_for('project_detail', project_id=p.id) }}"
+           class="btn btn-outline-primary btn-sm py-0">
+          <i class="bi bi-arrow-right"></i> Open
+        </a>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{% else %}
+<div class="text-center text-muted py-5">
+  <i class="bi bi-folder2 fs-1 d-block mb-3 text-muted"></i>
+  <p class="mb-1">No projects yet.</p>
+  <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#newProjectModal">
+    <i class="bi bi-plus-lg"></i> Create your first project
+  </button>
+</div>
+{% endif %}
+
+<!-- ── New Project Modal ─────────────────────────────────────────────────── -->
+<div class="modal fade" id="newProjectModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <form method="post" action="{{ url_for('create_project') }}">
+        <div class="modal-header" style="background:var(--navy); color:#fff">
+          <h5 class="modal-title"><i class="bi bi-folder-plus me-2"></i>New Project</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-12">
+              <label class="form-label fw-semibold">Project Name <span class="text-danger">*</span></label>
+              <input type="text" name="name" class="form-control" required
+                     placeholder="e.g., Navy AI-Enabled ISR Phase I">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Link to Topic (optional)</label>
+              <input type="text" name="topic_id" class="form-control"
+                     placeholder="Topic ID (numeric)">
+              <div class="form-text">Enter the Topic ID from the Topics list to link this project.</div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Initial Stage</label>
+              <select name="stage" class="form-select">
+                {% for s in stages %}
+                <option value="{{ s }}" {{ 'selected' if s == 'Identified' }}>{{ s }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12">
+              <label class="form-label fw-semibold">Description</label>
+              <textarea name="description" class="form-control" rows="2"
+                        placeholder="Brief description of the effort…"></textarea>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Lead / Owner</label>
+              <input type="text" name="lead" class="form-control" placeholder="Name or team">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Due Date (submission deadline)</label>
+              <input type="date" name="due_date" class="form-control">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Source / Program</label>
+              <input type="text" name="source" class="form-control" placeholder="e.g., DoD SBIR 2026.1">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Checklist Template</label>
+              <select name="checklist_type" class="form-select">
+                <option value="dod" selected>DoD SBIR Standard (Phase I)</option>
+                <option value="custom">Custom (blank — add your own items)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">
+            <i class="bi bi-folder-plus"></i> Create Project
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<style>
+  /* Stage badge colors */
+  .stage-badge { font-size:.72rem; padding:.3em .65em; font-weight:600; border-radius:20px; }
+  .stage-identified           { background:#e2e3e5; color:#383d41; }
+  .stage-qualified            { background:#cff4fc; color:#055160; }
+  .stage-qa-with-government   { background:#fff3cd; color:#664d03; }
+  .stage-technical-exchange-with-customer { background:#ffe5d0; color:#6d3c00; }
+  .stage-in-progress          { background:#cfe2ff; color:#084298; }
+  .stage-submitted            { background:#d8d3f5; color:#3d1f8a; }
+  .stage-awarded              { background:#d1e7dd; color:#0a3622; }
+  .stage-no-pursue            { background:#f8d7da; color:#58151c; }
+</style>
+<script>
+function filterStage(val) {
+  document.getElementById('stageFilter').value = val;
+  document.getElementById('filterForm').submit();
+}
+</script>
+{% endblock %}

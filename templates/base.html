@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}CaptureIQ{% endblock %}</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    :root {
+      --sidebar-width: 230px;
+      --navy: #003087;
+      --navy-light: #1a4fa0;
+      --gold: #c8972b;
+    }
+    body { background: #f4f6f9; font-size: .92rem; }
+    #sidebar {
+      width: var(--sidebar-width);
+      min-height: 100vh;
+      background: var(--navy);
+      position: fixed; top: 0; left: 0; z-index: 100;
+      display: flex; flex-direction: column;
+    }
+    #sidebar .brand {
+      padding: 1.2rem 1rem .8rem;
+      color: #fff;
+      font-weight: 700; font-size: 1.05rem;
+      border-bottom: 1px solid rgba(255,255,255,.15);
+    }
+    #sidebar .brand small { display: block; font-weight: 400; font-size: .72rem; color: rgba(255,255,255,.6); }
+    #sidebar .nav-link {
+      color: rgba(255,255,255,.8);
+      padding: .55rem 1rem;
+      border-radius: 0;
+      font-size: .88rem;
+    }
+    #sidebar .nav-link:hover, #sidebar .nav-link.active {
+      background: var(--navy-light);
+      color: #fff;
+    }
+    #sidebar .nav-link i { margin-right: .5rem; width: 18px; text-align: center; }
+    #sidebar .nav-section {
+      padding: .6rem 1rem .2rem;
+      font-size: .7rem; font-weight: 600;
+      color: rgba(255,255,255,.4);
+      letter-spacing: .08em; text-transform: uppercase;
+    }
+    #main-content {
+      margin-left: var(--sidebar-width);
+      padding: 1.5rem;
+      min-height: 100vh;
+    }
+    .topbar {
+      background: #fff;
+      border-bottom: 1px solid #dee2e6;
+      padding: .75rem 1.5rem;
+      margin: -1.5rem -1.5rem 1.5rem;
+      display: flex; align-items: center; gap: .75rem;
+    }
+    .topbar h1 { font-size: 1.1rem; font-weight: 600; margin: 0; color: #212529; }
+    .badge-phase-i   { background: #0d6efd; }
+    .badge-phase-ii  { background: #198754; }
+    .badge-phase-iii { background: #6f42c1; }
+    .stat-card { border: none; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+    .stat-card .card-body { padding: 1rem 1.25rem; }
+    .stat-number { font-size: 2rem; font-weight: 700; line-height: 1; color: var(--navy); }
+    .stat-label  { font-size: .75rem; color: #6c757d; text-transform: uppercase; letter-spacing: .06em; }
+    .filter-bar {
+      background: #fff;
+      border: 1px solid #dee2e6;
+      border-radius: 8px;
+      padding: .75rem 1rem;
+      margin-bottom: 1rem;
+    }
+    .table-card { background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.07); overflow: hidden; }
+    .table-card .table { margin-bottom: 0; font-size: .88rem; }
+    .table-card .table thead th {
+      background: #f8f9fa; border-bottom: 2px solid #dee2e6;
+      font-size: .75rem; font-weight: 600;
+      text-transform: uppercase; letter-spacing: .05em; color: #495057;
+    }
+    .fav-btn { border: none; background: none; padding: 0; cursor: pointer; font-size: 1.1rem; }
+    .fav-btn .bi-star-fill { color: var(--gold); }
+    .fav-btn .bi-star { color: #adb5bd; }
+    .score-badge {
+      display: inline-block; padding: .2em .5em;
+      border-radius: 4px; font-weight: 600; font-size: .8rem;
+    }
+    .score-high   { background: #d1e7dd; color: #0a3622; }
+    .score-medium { background: #fff3cd; color: #664d03; }
+    .score-low    { background: #f8d7da; color: #58151c; }
+    .job-badge { font-size: .75rem; padding: .25em .6em; }
+    a { color: var(--navy-light); }
+    .close-soon { color: #dc3545; font-weight: 600; }
+  </style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<nav id="sidebar">
+  <div class="brand">
+    <i class="bi bi-rocket-takeoff-fill text-warning"></i> CaptureIQ
+  </div>
+  <ul class="nav flex-column mt-2">
+    <li class="nav-item">
+      <a class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}" href="{{ url_for('dashboard') }}">
+        <i class="bi bi-speedometer2"></i> Dashboard
+      </a>
+    </li>
+    <li class="nav-section">Pipeline</li>
+    <li class="nav-item">
+      <a class="nav-link {% if request.endpoint == 'ingest_page' %}active{% endif %}" href="{{ url_for('ingest_page') }}">
+        <i class="bi bi-cloud-download"></i> Ingest Data
+      </a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link {% if request.endpoint == 'topics' and not request.args.get('favorited') %}active{% endif %}"
+         href="{{ url_for('topics') }}">
+        <i class="bi bi-tags"></i> Topics
+      </a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link {% if request.endpoint == 'topics' and request.args.get('favorited') == '1' %}active{% endif %}"
+         href="{{ url_for('topics', favorited='1') }}">
+        <i class="bi bi-star-fill text-warning"></i> Favorites
+      </a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link {% if request.endpoint == 'topics' and request.args.get('topic_status') == 'nominated' %}active{% endif %}"
+         href="{{ url_for('topics', topic_status='nominated') }}">
+        <i class="bi bi-hand-thumbs-up-fill" style="color:#3dd68c"></i> Nominated
+      </a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link {% if request.endpoint == 'topics' and request.args.get('topic_status') == 'passed' %}active{% endif %}"
+         href="{{ url_for('topics', topic_status='passed') }}">
+        <i class="bi bi-hand-thumbs-down-fill text-danger"></i> Passed
+      </a>
+    </li>
+    <li class="nav-section">Capture</li>
+    <li class="nav-item">
+      <a class="nav-link {% if request.endpoint in ['projects', 'project_detail', 'create_project'] %}active{% endif %}"
+         href="{{ url_for('projects') }}">
+        <i class="bi bi-folder2-open"></i> Projects
+      </a>
+    </li>
+  </ul>
+  <div class="mt-auto" style="border-top:1px solid rgba(255,255,255,.15)">
+    <ul class="nav flex-column">
+      <li class="nav-section" style="margin-top:.5rem">Settings</li>
+      <li class="nav-item">
+        <a class="nav-link {% if request.endpoint == 'gdrive_settings' %}active{% endif %}"
+           href="{{ url_for('gdrive_settings') }}">
+          {% if gdrive_connected %}
+            <i class="bi bi-google text-success"></i> Google Drive
+            <span class="badge bg-success ms-1" style="font-size:.6rem">On</span>
+          {% else %}
+            <i class="bi bi-google text-muted"></i> Google Drive
+          {% endif %}
+        </a>
+      </li>
+    </ul>
+  </div>
+</nav>
+
+<!-- Main content -->
+<div id="main-content">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for cat, msg in messages %}
+        <div class="alert alert-{{ 'info' if cat == 'info' else cat }} alert-dismissible fade show mb-3" role="alert">
+          {{ msg }}
+          <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  {% block content %}{% endblock %}
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

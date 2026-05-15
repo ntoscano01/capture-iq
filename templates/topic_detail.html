@@ -1,0 +1,370 @@
+{% extends "base.html" %}
+{% block title %}{{ topic.topic_number }} — {{ topic.title[:60] }} — SBIR Pipeline{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <a href="{{ url_for('topics') }}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left"></i>
+  </a>
+  <div class="d-flex flex-column ms-1" style="max-width:70vw">
+    <span class="text-muted" style="font-size:.75rem">
+      <code>{{ topic.topic_number or '—' }}</code>
+      &nbsp;·&nbsp;{{ topic.branch or topic.agency or '' }}
+      &nbsp;·&nbsp;<span class="badge bg-primary">Phase {{ topic.phase or '—' }}</span>
+      {% if topic.itar %}<span class="badge bg-danger ms-1">ITAR</span>{% endif %}
+      {% if topic.cmmc_level %}<span class="badge bg-warning text-dark ms-1">CMMC {{ topic.cmmc_level }}</span>{% endif %}
+    </span>
+    <h1 style="font-size:1.05rem;margin:0;font-weight:600">{{ topic.title }}</h1>
+  </div>
+  <div class="ms-auto d-flex gap-2 flex-wrap">
+    <form method="post" action="{{ url_for('toggle_topic_favorite', topic_id=topic.id) }}">
+      <button type="submit" class="btn btn-sm {{ 'btn-warning' if topic.favorited else 'btn-outline-secondary' }}">
+        <i class="bi {{ 'bi-star-fill' if topic.favorited else 'bi-star' }}"></i>
+        {{ 'Favorited' if topic.favorited else 'Favorite' }}
+      </button>
+    </form>
+
+    <!-- Share button -->
+    {% if topic.url %}
+    <button type="button" class="btn btn-sm btn-outline-secondary"
+            onclick="copyTopicLink('{{ topic.url }}')"
+            title="Copy topic URL to clipboard" id="share-btn-{{ topic.id }}">
+      <i class="bi bi-share"></i> Share
+    </button>
+    {% endif %}
+
+    <!-- Export buttons -->
+    <div class="btn-group btn-group-sm">
+      <a href="{{ url_for('export_topic_pdf', topic_id=topic.id) }}"
+         class="btn btn-outline-danger" title="Download as PDF">
+        <i class="bi bi-file-earmark-pdf"></i> PDF
+      </a>
+      <a href="{{ url_for('export_topic_docx', topic_id=topic.id) }}"
+         class="btn btn-outline-primary" title="Download as Word document">
+        <i class="bi bi-file-earmark-word"></i> DOCX
+      </a>
+    </div>
+
+    {% if topic.url %}
+    <a href="{{ topic.url }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary">
+      <i class="bi bi-box-arrow-up-right"></i> View on Portal
+    </a>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Meta strip -->
+<div class="card mb-3" style="border-radius:8px">
+  <div class="card-body py-2 px-3">
+    <div class="row g-2" style="font-size:.85rem">
+      <div class="col-auto">
+        <span class="text-muted">Agency</span>&nbsp;
+        <strong>{{ topic.agency or '—' }}</strong>
+      </div>
+      <div class="col-auto border-start ps-3">
+        <span class="text-muted">Component</span>&nbsp;
+        <strong>{{ topic.branch or '—' }}</strong>
+      </div>
+      <div class="col-auto border-start ps-3">
+        <span class="text-muted">Program</span>&nbsp;
+        <strong>{{ topic.source or '—' }}</strong>
+      </div>
+      {% if topic.tech_areas %}
+      <div class="col-auto border-start ps-3">
+        <span class="text-muted">Tech Area</span>&nbsp;
+        <strong>{{ topic.tech_areas }}</strong>
+      </div>
+      {% endif %}
+      {% if topic.focus_areas %}
+      <div class="col-auto border-start ps-3">
+        <span class="text-muted">Focus Area</span>&nbsp;
+        <strong>{{ topic.focus_areas }}</strong>
+      </div>
+      {% endif %}
+      {% if topic.tech_contact %}
+      <div class="col-auto border-start ps-3">
+        <span class="text-muted"><i class="bi bi-person"></i> TPOC</span>&nbsp;
+        <strong>{{ topic.tech_contact }}</strong>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% if topic.keywords %}
+<div class="mb-3">
+  <span class="text-muted" style="font-size:.8rem">Keywords:</span>
+  {% for kw in topic.keywords.split(';') %}
+    {% set kw = kw.strip() %}
+    {% if kw %}
+    <a href="{{ url_for('topics', keyword=kw) }}"
+       class="badge bg-light text-dark border text-decoration-none me-1 mb-1"
+       style="font-size:.78rem">{{ kw }}</a>
+    {% endif %}
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="row g-3">
+
+  <!-- Left column: main sections -->
+  <div class="col-lg-8">
+
+    {% if topic.description %}
+    <div class="card mb-3">
+      <div class="card-header bg-white fw-semibold d-flex align-items-center gap-2">
+        <i class="bi bi-file-text text-primary"></i> Description
+      </div>
+      <div class="card-body" style="font-size:.9rem;line-height:1.7;white-space:pre-wrap">{{ topic.description }}</div>
+    </div>
+    {% endif %}
+
+    {% if topic.objective %}
+    <div class="card mb-3">
+      <div class="card-header bg-white fw-semibold d-flex align-items-center gap-2">
+        <i class="bi bi-bullseye text-success"></i> Objective
+      </div>
+      <div class="card-body" style="font-size:.9rem;line-height:1.7;white-space:pre-wrap">{{ topic.objective }}</div>
+    </div>
+    {% endif %}
+
+    {% if topic.phase1_desc %}
+    <div class="card mb-3">
+      <div class="card-header bg-white fw-semibold d-flex align-items-center gap-2">
+        <span class="badge bg-primary">Phase I</span> Description
+      </div>
+      <div class="card-body" style="font-size:.9rem;line-height:1.7;white-space:pre-wrap">{{ topic.phase1_desc }}</div>
+    </div>
+    {% endif %}
+
+    {% if topic.phase2_desc %}
+    <div class="card mb-3">
+      <div class="card-header bg-white fw-semibold d-flex align-items-center gap-2">
+        <span class="badge bg-success">Phase II</span> Description
+      </div>
+      <div class="card-body" style="font-size:.9rem;line-height:1.7;white-space:pre-wrap">{{ topic.phase2_desc }}</div>
+    </div>
+    {% endif %}
+
+    {% if topic.phase3_desc %}
+    <div class="card mb-3">
+      <div class="card-header bg-white fw-semibold d-flex align-items-center gap-2">
+        <span class="badge bg-secondary">Phase III</span> Description
+      </div>
+      <div class="card-body" style="font-size:.9rem;line-height:1.7;white-space:pre-wrap">{{ topic.phase3_desc }}</div>
+    </div>
+    {% endif %}
+
+    {% if topic.ref_docs_parsed %}
+    <div class="card mb-3">
+      <div class="card-header bg-white fw-semibold d-flex align-items-center gap-2">
+        <i class="bi bi-journal-bookmark text-secondary"></i> References
+      </div>
+      <ul class="list-group list-group-flush">
+        {% for doc in topic.ref_docs_parsed %}
+          {% set ref_title = doc.referenceTitle | replace('<p>', '') | replace('</p>', '') | replace('<P>', '') | replace('</P>', '') %}
+          <li class="list-group-item" style="font-size:.85rem">
+            {% if doc.url %}
+              <a href="{{ doc.url }}" target="_blank" rel="noopener">
+                <i class="bi bi-link-45deg"></i> {{ ref_title | striptags }}
+              </a>
+            {% else %}
+              {{ ref_title | striptags }}
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+  </div>
+
+  <!-- Right column: metadata -->
+  <div class="col-lg-4">
+
+    <div class="card mb-3">
+      <div class="card-header bg-white fw-semibold">Topic Details</div>
+      <div class="card-body p-0">
+        <table class="table table-borderless mb-0" style="font-size:.85rem">
+          <tr>
+            <th class="text-muted ps-3" style="width:45%">Topic Number</th>
+            <td><code>{{ topic.topic_number or '—' }}</code></td>
+          </tr>
+          <tr>
+            <th class="text-muted ps-3">Agency</th>
+            <td>{{ topic.agency or '—' }}</td>
+          </tr>
+          <tr>
+            <th class="text-muted ps-3">Component</th>
+            <td>{{ topic.branch or '—' }}</td>
+          </tr>
+          <tr>
+            <th class="text-muted ps-3">Phase</th>
+            <td>
+              {% if topic.phase %}
+                <span class="badge bg-primary">Phase {{ topic.phase }}</span>
+              {% else %}—{% endif %}
+            </td>
+          </tr>
+          {% if topic.tech_areas %}
+          <tr>
+            <th class="text-muted ps-3">Tech Area</th>
+            <td>{{ topic.tech_areas }}</td>
+          </tr>
+          {% endif %}
+          {% if topic.focus_areas %}
+          <tr>
+            <th class="text-muted ps-3">Focus Area</th>
+            <td>{{ topic.focus_areas }}</td>
+          </tr>
+          {% endif %}
+          <tr>
+            <th class="text-muted ps-3">ITAR</th>
+            <td>
+              {% if topic.itar %}
+                <span class="badge bg-danger">Yes</span>
+              {% else %}
+                <span class="text-muted">No</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% if topic.cmmc_level %}
+          <tr>
+            <th class="text-muted ps-3">CMMC Level</th>
+            <td>{{ topic.cmmc_level }}</td>
+          </tr>
+          {% endif %}
+          {% if topic.tech_contact %}
+          <tr>
+            <th class="text-muted ps-3">TPOC</th>
+            <td>{{ topic.tech_contact }}</td>
+          </tr>
+          {% endif %}
+          <tr>
+            <th class="text-muted ps-3">Source</th>
+            <td><span class="badge bg-secondary">{{ topic.source or '—' }}</span></td>
+          </tr>
+          <tr>
+            <th class="text-muted ps-3">Last Updated</th>
+            <td class="text-muted">{{ topic.updated_at[:10] if topic.updated_at else '—' }}</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+
+    {% if topic.url %}
+    <div class="card mb-3">
+      <div class="card-body text-center">
+        <a href="{{ topic.url }}" target="_blank" rel="noopener"
+           class="btn btn-primary w-100">
+          <i class="bi bi-box-arrow-up-right"></i> View Full Topic on DSIP Portal
+        </a>
+        <div class="text-muted mt-2" style="font-size:.75rem">
+          Opens dodsbirsttr.mil in a new tab
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Score card -->
+    <div class="card mb-3">
+      <div class="card-header bg-white fw-semibold d-flex align-items-center gap-2">
+        <i class="bi bi-star-half text-warning"></i> Score
+      </div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('set_topic_score', topic_id=topic.id) }}">
+          <div class="mb-2 text-center">
+            <span class="display-6 fw-bold" style="color:var(--navy)">
+              {{ '%.1f'|format(topic.score or 0) }}
+            </span>
+            <span class="text-muted" style="font-size:.8rem"> / 10</span>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <input type="range" name="score" class="form-range flex-grow-1"
+                   min="0" max="10" step="0.5"
+                   value="{{ topic.score or 0 }}"
+                   oninput="document.getElementById('score-val-{{ topic.id }}').textContent=this.value">
+            <span id="score-val-{{ topic.id }}" class="badge bg-secondary" style="min-width:2.5rem">
+              {{ '%.1f'|format(topic.score or 0) }}
+            </span>
+          </div>
+          <button type="submit" class="btn btn-sm btn-outline-primary w-100 mt-2">
+            <i class="bi bi-check-lg"></i> Save Score
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Notes card -->
+    <div class="card mb-3">
+      <div class="card-header bg-white fw-semibold d-flex align-items-center gap-2">
+        <i class="bi bi-journal-text text-secondary"></i> Notes
+      </div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('set_topic_notes', topic_id=topic.id) }}">
+          <textarea name="notes" class="form-control form-control-sm mb-2"
+                    rows="5" placeholder="Add your notes, assessment, or action items here…"
+                    style="font-size:.85rem;resize:vertical">{{ topic.notes or '' }}</textarea>
+          <button type="submit" class="btn btn-sm btn-outline-primary w-100">
+            <i class="bi bi-floppy"></i> Save Notes
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header bg-white fw-semibold">Quick Search</div>
+      <div class="card-body">
+        <p class="text-muted" style="font-size:.8rem">Find related topics, awards or solicitations.</p>
+        <form action="{{ url_for('search') }}" method="get">
+          <div class="input-group input-group-sm">
+            <input type="text" name="q" class="form-control"
+                   placeholder="Search all data…"
+                   value="{{ topic.topic_number }}">
+            <button type="submit" class="btn btn-outline-secondary">
+              <i class="bi bi-search"></i>
+            </button>
+          </div>
+        </form>
+        {% if topic.tech_areas %}
+        <div class="mt-2">
+          <a href="{{ url_for('topics', keyword=topic.tech_areas.split(';')[0].strip()) }}"
+             class="btn btn-outline-secondary btn-sm w-100">
+            <i class="bi bi-tags"></i> More {{ topic.tech_areas.split(';')[0].strip() }} topics
+          </a>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function copyTopicLink(url) {
+  navigator.clipboard.writeText(url).then(function() {
+    document.querySelectorAll('[id^="share-btn-"]').forEach(function(btn) {
+      const orig = btn.innerHTML;
+      btn.innerHTML = '<i class="bi bi-check-lg"></i> Copied!';
+      btn.classList.add('btn-success');
+      btn.classList.remove('btn-outline-secondary');
+      setTimeout(function() {
+        btn.innerHTML = orig;
+        btn.classList.remove('btn-success');
+        btn.classList.add('btn-outline-secondary');
+      }, 2000);
+    });
+  }).catch(function() {
+    const el = document.createElement('textarea');
+    el.value = url;
+    document.body.appendChild(el);
+    el.select();
+    document.execCommand('copy');
+    document.body.removeChild(el);
+    alert('Link copied: ' + url);
+  });
+}
+</script>
+{% endblock %}

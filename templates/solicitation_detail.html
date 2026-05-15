@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}{{ sol.title[:60] }} — SBIR Pipeline{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <a href="{{ url_for('solicitations') }}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left"></i>
+  </a>
+  <h1 class="text-truncate" style="max-width:60vw">{{ sol.title }}</h1>
+  <form method="post" action="{{ url_for('toggle_favorite', sol_id=sol.id) }}" class="ms-auto">
+    <button type="submit" class="btn btn-sm {{ 'btn-warning' if sol.favorited else 'btn-outline-secondary' }}">
+      <i class="bi {{ 'bi-star-fill' if sol.favorited else 'bi-star' }}"></i>
+      {{ 'Favorited' if sol.favorited else 'Add to Favorites' }}
+    </button>
+  </form>
+</div>
+
+<div class="row g-3">
+  <!-- Left: metadata -->
+  <div class="col-md-4">
+    <div class="card mb-3">
+      <div class="card-header bg-white fw-semibold">Details</div>
+      <div class="card-body p-0">
+        <table class="table table-borderless mb-0" style="font-size:.88rem">
+          <tr><th class="text-muted ps-3" style="width:40%">Agency</th><td>{{ sol.agency or '—' }}</td></tr>
+          <tr><th class="text-muted ps-3">Branch</th><td>{{ sol.branch or '—' }}</td></tr>
+          <tr><th class="text-muted ps-3">Phase</th>
+            <td>
+              {% if sol.phase %}
+                <span class="badge bg-primary">{{ sol.phase }}</span>
+              {% else %}—{% endif %}
+            </td>
+          </tr>
+          <tr><th class="text-muted ps-3">Program</th><td>{{ sol.program or '—' }}</td></tr>
+          <tr><th class="text-muted ps-3">Sol. Number</th><td>{{ sol.solicitation_number or '—' }}</td></tr>
+          <tr><th class="text-muted ps-3">Open Date</th><td>{{ sol.open_date or '—' }}</td></tr>
+          <tr><th class="text-muted ps-3">Close Date</th>
+            <td class="{{ 'close-soon' if sol.close_date and sol.close_date <= '2026-07-01' else '' }}">
+              {{ sol.close_date or '—' }}
+            </td>
+          </tr>
+          <tr><th class="text-muted ps-3">Source</th><td><span class="badge bg-secondary">{{ sol.source or '—' }}</span></td></tr>
+          <tr><th class="text-muted ps-3">Status</th>
+            <td><span class="badge {{ 'bg-success' if sol.status == 'open' else 'bg-secondary' }}">{{ sol.status or '—' }}</span></td>
+          </tr>
+          {% if sol.url %}
+          <tr><th class="text-muted ps-3">Link</th>
+            <td><a href="{{ sol.url }}" target="_blank" rel="noopener">
+              <i class="bi bi-box-arrow-up-right"></i> Official Page
+            </a></td>
+          </tr>
+          {% endif %}
+        </table>
+      </div>
+    </div>
+
+    <!-- Score -->
+    <div class="card mb-3">
+      <div class="card-header bg-white fw-semibold">Score / Ranking</div>
+      <div class="card-body">
+        <div class="text-center mb-2">
+          <span class="score-badge fs-4 {{ 'score-high' if sol.score >= 7 else 'score-medium' if sol.score >= 4 else 'score-low' }}">
+            {{ sol.score|int if sol.score else '—' }}{% if sol.score %}/10{% endif %}
+          </span>
+        </div>
+        <form method="post" action="{{ url_for('set_score', sol_id=sol.id) }}">
+          <label class="form-label fw-semibold" style="font-size:.8rem">Set Score (0–10)</label>
+          <div class="d-flex gap-2">
+            <input type="number" name="score" min="0" max="10" step="0.5"
+                   class="form-control form-control-sm" value="{{ sol.score or '' }}" placeholder="0–10">
+            <button type="submit" class="btn btn-sm btn-primary">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Notes -->
+    <div class="card">
+      <div class="card-header bg-white fw-semibold">Notes</div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('set_notes', sol_id=sol.id) }}">
+          <textarea name="notes" class="form-control form-control-sm mb-2" rows="4"
+                    placeholder="Add your notes here…">{{ sol.notes or '' }}</textarea>
+          <button type="submit" class="btn btn-sm btn-primary w-100">Save Notes</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: description + topics -->
+  <div class="col-md-8">
+    <div class="card mb-3">
+      <div class="card-header bg-white fw-semibold">Description</div>
+      <div class="card-body" style="max-height:400px; overflow-y:auto; white-space:pre-wrap; font-size:.88rem">
+        {{ sol.description or 'No description available.' }}
+      </div>
+    </div>
+
+    {% if topics %}
+    <div class="card table-card">
+      <div class="card-header bg-white fw-semibold">Related Topics</div>
+      <table class="table table-hover mb-0" style="font-size:.88rem">
+        <thead><tr><th>Topic #</th><th>Title</th><th>Phase</th><th>Branch</th></tr></thead>
+        <tbody>
+          {% for t in topics %}
+          <tr>
+            <td><code>{{ t.topic_number or '—' }}</code></td>
+            <td>{{ t.title[:80] }}{% if t.title|length > 80 %}…{% endif %}</td>
+            <td><span class="badge bg-primary">{{ t.phase or '—' }}</span></td>
+            <td>{{ t.branch or '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

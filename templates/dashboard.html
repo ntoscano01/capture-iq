@@ -1,0 +1,224 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — SBIR Pipeline{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <i class="bi bi-speedometer2 text-primary fs-5"></i>
+  <h1>Dashboard</h1>
+  <span class="text-muted ms-auto" style="font-size:.8rem">
+    <i class="bi bi-database"></i> CaptureIQ
+  </span>
+</div>
+
+<!-- Stat cards -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-2">
+    <div class="card stat-card h-100" style="cursor:pointer" onclick="location.href='{{ url_for('topics') }}'">
+      <div class="card-body text-center">
+        <div class="stat-number">{{ stats.topic_count }}</div>
+        <div class="stat-label">Topics</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card stat-card h-100" style="cursor:pointer" onclick="location.href='{{ url_for('topics', favorited='1') }}'">
+      <div class="card-body text-center">
+        <div class="stat-number text-warning">{{ stats.favorited_count }}</div>
+        <div class="stat-label">Favorited</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card stat-card h-100" style="cursor:pointer"
+         onclick="location.href='{{ url_for('topics', topic_status='nominated') }}'">
+      <div class="card-body text-center">
+        <div class="stat-number" style="color:#1aab6d">{{ stats.nominated_count }}</div>
+        <div class="stat-label">Nominated</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card stat-card h-100" style="cursor:pointer"
+         onclick="location.href='{{ url_for('topics', topic_status='passed') }}'">
+      <div class="card-body text-center">
+        <div class="stat-number text-danger">{{ stats.passed_count }}</div>
+        <div class="stat-label">Passed</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="card stat-card h-100">
+      <div class="card-body text-center">
+        <div class="stat-number text-info">{{ stats.noted_count }}</div>
+        <div class="stat-label">With Notes</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <!-- Top agencies -->
+  <div class="col-md-5">
+    <div class="card table-card">
+      <div class="card-header bg-white fw-semibold border-bottom">
+        <i class="bi bi-bar-chart-fill text-primary me-1"></i> Topics by Branch
+      </div>
+      <div class="card-body p-0">
+        {% if stats.top_agencies %}
+          <table class="table table-hover mb-0">
+            <thead><tr><th>Branch</th><th class="text-end">Topics</th></tr></thead>
+            <tbody>
+              {% for row in stats.top_agencies %}
+              <tr>
+                <td>
+                  <a href="{{ url_for('topics', keyword=row.branch) }}" class="text-dark text-decoration-none">
+                    {{ row.branch }}
+                  </a>
+                </td>
+                <td class="text-end">
+                  <span class="badge bg-primary">{{ row.cnt }}</span>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <div class="text-center text-muted py-4">
+            <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+            No data yet. <a href="{{ url_for('ingest_page') }}">Ingest some records</a> to get started.
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent ingestions -->
+  <div class="col-md-7">
+    <div class="card table-card">
+      <div class="card-header bg-white fw-semibold border-bottom d-flex align-items-center">
+        <i class="bi bi-clock-history text-secondary me-1"></i> Recent Ingestions
+        <a href="{{ url_for('ingest_page') }}" class="btn btn-sm btn-outline-primary ms-auto">
+          <i class="bi bi-plus-lg"></i> New Ingest
+        </a>
+      </div>
+      <div class="card-body p-0">
+        {% if stats.recent_ingestions %}
+          <table class="table table-hover mb-0">
+            <thead><tr><th>Source</th><th>Added</th><th>Updated</th><th>Started</th></tr></thead>
+            <tbody>
+              {% for log in stats.recent_ingestions %}
+              <tr>
+                <td><span class="badge bg-secondary">{{ log.source }}</span></td>
+                <td><span class="text-success">+{{ log.records_added }}</span></td>
+                <td><span class="text-info">~{{ log.records_updated }}</span></td>
+                <td class="text-muted" style="font-size:.8rem">{{ log.started_at[:16] if log.started_at else '—' }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <div class="text-center text-muted py-4">
+            <i class="bi bi-cloud-slash fs-2 d-block mb-2"></i>
+            No ingestion history yet.
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Active jobs -->
+    {% if jobs %}
+    <div class="card mt-3">
+      <div class="card-header bg-white fw-semibold border-bottom">
+        <i class="bi bi-gear-wide-connected text-warning me-1"></i> Active Jobs
+      </div>
+      <div class="card-body p-2" id="jobs-panel">
+        {% for jid, job in jobs.items() %}
+        <div class="d-flex align-items-center gap-2 py-1 border-bottom">
+          {% if job.status == 'running' %}
+            <span class="spinner-border spinner-border-sm text-primary"></span>
+          {% elif job.status == 'done' %}
+            <i class="bi bi-check-circle-fill text-success"></i>
+          {% else %}
+            <i class="bi bi-x-circle-fill text-danger"></i>
+          {% endif %}
+          <span class="flex-grow-1">{{ job.source }}</span>
+          <span class="badge job-badge bg-{{ 'primary' if job.status == 'running' else 'success' if job.status == 'done' else 'danger' }}">
+            {{ job.status }}
+          </span>
+          {% if job.added is defined %}
+            <small class="text-muted">+{{ job.added }} / ~{{ job.updated }}</small>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- SBIR Capture summary -->
+{% if capture_stats and capture_stats.total > 0 %}
+<div class="row g-3 mt-1">
+  <div class="col-12">
+    <div class="card table-card">
+      <div class="card-header bg-white fw-semibold border-bottom d-flex align-items-center">
+        <i class="bi bi-folder2-open text-primary me-1"></i> SBIR Capture — Active Projects
+        <a href="{{ url_for('projects') }}" class="btn btn-sm btn-outline-primary ms-auto">
+          <i class="bi bi-arrow-right"></i> All Projects
+        </a>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-hover mb-0" style="font-size:.85rem">
+          <thead><tr><th>Project</th><th>Topic</th><th>Stage</th><th>Updated</th></tr></thead>
+          <tbody>
+            {% for p in capture_stats.recent %}
+            <tr style="cursor:pointer" onclick="location.href='{{ url_for('project_detail', project_id=p.id) }}'">
+              <td class="fw-semibold">{{ p.name }}</td>
+              <td class="text-muted">{{ p.topic_number or '—' }}</td>
+              <td><span class="badge bg-secondary">{{ p.stage }}</span></td>
+              <td class="text-muted" style="font-size:.78rem">{{ p.updated_at[:10] if p.updated_at else '—' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Quick actions -->
+<div class="row g-3 mt-1">
+  <div class="col-12">
+    <div class="card stat-card">
+      <div class="card-body d-flex gap-2 flex-wrap">
+        <span class="fw-semibold me-2 align-self-center text-muted">Quick links:</span>
+        <a href="{{ url_for('topics') }}" class="btn btn-outline-primary btn-sm">
+          <i class="bi bi-tags"></i> All Topics
+        </a>
+        <a href="{{ url_for('topics', favorited='1') }}" class="btn btn-outline-warning btn-sm">
+          <i class="bi bi-star-fill"></i> My Favorites
+        </a>
+        <a href="{{ url_for('projects') }}" class="btn btn-outline-success btn-sm">
+          <i class="bi bi-folder2-open"></i> Projects
+        </a>
+        <a href="{{ url_for('ingest_page') }}" class="btn btn-outline-secondary btn-sm">
+          <i class="bi bi-cloud-download"></i> Ingest Data
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Auto-refresh job status every 5s if any jobs are running
+  {% if jobs %}
+  const hasRunning = {{ 'true' if jobs.values()|selectattr('status','eq','running')|list else 'false' }};
+  if (hasRunning) {
+    setTimeout(() => location.reload(), 5000);
+  }
+  {% endif %}
+</script>
+{% endblock %}

@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% block title %}Solicitations — SBIR Pipeline{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <i class="bi bi-file-earmark-text text-primary fs-5"></i>
+  <h1>Solicitations</h1>
+  <span class="badge bg-primary ms-2">{{ rows|length }} shown</span>
+  {% if favorited == '1' %}
+    <span class="badge bg-warning text-dark ms-1"><i class="bi bi-star-fill"></i> Favorites</span>
+  {% endif %}
+</div>
+
+<!-- Filters -->
+<form method="get" class="filter-bar">
+  <div class="row g-2 align-items-end">
+    <div class="col-md-3">
+      <label class="form-label mb-1 fw-semibold" style="font-size:.75rem">Keyword</label>
+      <input type="text" name="keyword" class="form-control form-control-sm"
+             placeholder="Search title, description…" value="{{ keyword }}">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label mb-1 fw-semibold" style="font-size:.75rem">Agency</label>
+      <select name="agency" class="form-select form-select-sm">
+        <option value="">All Agencies</option>
+        {% for a in filters.agencies %}
+          <option value="{{ a }}" {{ 'selected' if agency == a }}>{{ a }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label mb-1 fw-semibold" style="font-size:.75rem">Phase</label>
+      <select name="phase" class="form-select form-select-sm">
+        <option value="">All Phases</option>
+        {% for p in filters.phases %}
+          <option value="{{ p }}" {{ 'selected' if phase == p }}>{{ p }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label mb-1 fw-semibold" style="font-size:.75rem">Program</label>
+      <select name="program" class="form-select form-select-sm">
+        <option value="">All Programs</option>
+        {% for p in filters.programs %}
+          <option value="{{ p }}" {{ 'selected' if program == p }}>{{ p }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label mb-1 fw-semibold" style="font-size:.75rem">Source</label>
+      <select name="source" class="form-select form-select-sm">
+        <option value="">All Sources</option>
+        {% for s in filters.sources %}
+          <option value="{{ s }}" {{ 'selected' if source == s }}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-1 d-flex gap-1">
+      <button type="submit" class="btn btn-primary btn-sm w-100">
+        <i class="bi bi-funnel"></i>
+      </button>
+      <a href="{{ url_for('solicitations') }}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-x"></i>
+      </a>
+    </div>
+  </div>
+  <div class="mt-2 d-flex gap-2">
+    <div class="form-check form-switch">
+      <input class="form-check-input" type="checkbox" name="favorited" value="1"
+             {{ 'checked' if favorited == '1' }} onchange="this.form.submit()">
+      <label class="form-check-label" style="font-size:.82rem">Favorites only</label>
+    </div>
+  </div>
+</form>
+
+<!-- Table -->
+<div class="table-card">
+  <table class="table table-hover align-middle">
+    <thead>
+      <tr>
+        <th style="width:36px"></th>
+        <th>Title</th>
+        <th>Agency</th>
+        <th>Branch</th>
+        <th>Phase</th>
+        <th>Program</th>
+        <th>Close Date</th>
+        <th>Score</th>
+        <th>Source</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>
+          <form method="post" action="{{ url_for('toggle_favorite', sol_id=row.id) }}">
+            <button type="submit" class="fav-btn">
+              <i class="bi {{ 'bi-star-fill' if row.favorited else 'bi-star' }}"></i>
+            </button>
+          </form>
+        </td>
+        <td>
+          <a href="{{ url_for('solicitation_detail', sol_id=row.id) }}" class="fw-semibold text-decoration-none">
+            {{ row.title[:80] }}{% if row.title|length > 80 %}…{% endif %}
+          </a>
+          {% if row.notes %}
+            <br><small class="text-muted">📝 {{ row.notes[:60] }}</small>
+          {% endif %}
+        </td>
+        <td>{{ row.agency or '—' }}</td>
+        <td>{{ row.branch or '—' }}</td>
+        <td>
+          {% if row.phase %}
+            <span class="badge badge-phase-{{ row.phase|lower|replace(' ', '-') }} bg-primary">
+              {{ row.phase }}
+            </span>
+          {% else %}—{% endif %}
+        </td>
+        <td>{{ row.program or '—' }}</td>
+        <td>
+          {% if row.close_date %}
+            <span class="{{ 'close-soon' if row.close_date <= '2026-07-01' else '' }}">
+              {{ row.close_date }}
+            </span>
+          {% else %}—{% endif %}
+        </td>
+        <td>
+          {% if row.score and row.score > 0 %}
+            <span class="score-badge {{ 'score-high' if row.score >= 7 else 'score-medium' if row.score >= 4 else 'score-low' }}">
+              {{ row.score|int }}/10
+            </span>
+          {% else %}—{% endif %}
+        </td>
+        <td><span class="badge bg-secondary">{{ row.source or '—' }}</span></td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="9" class="text-center text-muted py-5">
+          <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+          No solicitations found.
+          <a href="{{ url_for('ingest_page') }}">Ingest some data</a> to get started.
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Pagination -->
+{% if rows|length == per_page %}
+<div class="d-flex justify-content-center mt-3">
+  <nav>
+    <ul class="pagination pagination-sm">
+      {% if page > 1 %}
+      <li class="page-item">
+        <a class="page-link" href="?{{ request.query_string.decode().replace('page=' ~ page, 'page=' ~ (page-1)) }}">
+          &laquo; Prev
+        </a>
+      </li>
+      {% endif %}
+      <li class="page-item active"><span class="page-link">{{ page }}</span></li>
+      <li class="page-item">
+        <a class="page-link" href="?page={{ page+1 }}&keyword={{ keyword }}&agency={{ agency }}&phase={{ phase }}&program={{ program }}&source={{ source }}&favorited={{ favorited }}">
+          Next &raquo;
+        </a>
+      </li>
+    </ul>
+  </nav>
+</div>
+{% endif %}
+{% endblock %}

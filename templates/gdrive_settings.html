@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}Google Drive — CaptureIQ{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <i class="bi bi-gear text-secondary fs-5"></i>
+  <h1>Settings — Google Drive</h1>
+</div>
+
+<div class="row g-3">
+  <div class="col-md-7">
+
+    <!-- Connection status card -->
+    <div class="card mb-3" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.08)">
+      <div class="card-header bg-white fw-semibold border-bottom d-flex align-items-center gap-2">
+        <img src="https://ssl.gstatic.com/images/branding/product/1x/drive_2020q4_32dp.png"
+             width="20" height="20" alt="Drive">
+        Google Drive Connection
+        {% if connected %}
+          <span class="badge bg-success ms-auto">Connected</span>
+        {% else %}
+          <span class="badge bg-secondary ms-auto">Not connected</span>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        {% if connected %}
+          <p class="mb-3">
+            <i class="bi bi-check-circle-fill text-success me-1"></i>
+            Google Drive is connected. Project files can be uploaded directly to your Drive.
+            A <strong>CaptureIQ</strong> folder will be created at the root of your Drive,
+            with a sub-folder for each project.
+          </p>
+          <form method="post" action="{{ url_for('gdrive_disconnect') }}"
+                onsubmit="return confirm('Disconnect Google Drive? Existing Drive files will remain on Drive but the app will lose access.')">
+            <button type="submit" class="btn btn-outline-danger btn-sm">
+              <i class="bi bi-plug"></i> Disconnect
+            </button>
+          </form>
+        {% elif not has_creds %}
+          <div class="alert alert-warning mb-3">
+            <strong>credentials.json not found.</strong>
+            Complete Step 1 below before connecting.
+          </div>
+          <a href="{{ url_for('gdrive_connect') }}" class="btn btn-primary disabled">
+            <i class="bi bi-google"></i> Connect Google Drive
+          </a>
+        {% else %}
+          <p class="mb-3 text-muted">
+            credentials.json found. Click below to authorise CaptureIQ to access your Google Drive.
+          </p>
+          <a href="{{ url_for('gdrive_connect') }}" class="btn btn-primary">
+            <i class="bi bi-google"></i> Connect Google Drive
+          </a>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Setup instructions -->
+    {% if not connected %}
+    <div class="card" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.08)">
+      <div class="card-header bg-white fw-semibold border-bottom">
+        <i class="bi bi-list-ol text-primary me-2"></i> One-time Setup Instructions
+      </div>
+      <div class="card-body" style="font-size:.9rem">
+        <ol class="mb-0" style="line-height:2">
+          <li>
+            Go to the
+            <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">
+              Google Cloud Console <i class="bi bi-box-arrow-up-right" style="font-size:.75rem"></i>
+            </a>
+            and sign in with your Google account.
+          </li>
+          <li>Create a new project (e.g. <strong>CaptureIQ</strong>) or select an existing one.</li>
+          <li>
+            Navigate to <strong>APIs &amp; Services → Library</strong>,
+            search for <strong>Google Drive API</strong>, and click <strong>Enable</strong>.
+          </li>
+          <li>
+            Go to <strong>APIs &amp; Services → Credentials</strong> →
+            <strong>Create Credentials → OAuth 2.0 Client ID</strong>.
+          </li>
+          <li>
+            Set application type to <strong>Web application</strong>.
+            Under <em>Authorised redirect URIs</em>, add exactly:
+            <br>
+            <code style="background:#f8f9fa; padding:.2em .5em; border-radius:4px">
+              http://127.0.0.1:5000/settings/gdrive/callback
+            </code>
+          </li>
+          <li>Click <strong>Create</strong>, then <strong>Download JSON</strong>.</li>
+          <li>
+            Rename the downloaded file to <strong>credentials.json</strong> and place it
+            in the same folder as <code>app.py</code>
+            (i.e. inside <code>sbir-pipeline/</code>).
+          </li>
+          <li>Restart the application, return here, and click <strong>Connect Google Drive</strong>.</li>
+        </ol>
+      </div>
+    </div>
+    {% endif %}
+
+  </div>
+
+  <!-- Right: what this enables -->
+  <div class="col-md-5">
+    <div class="card" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.08); border-left:4px solid var(--navy)">
+      <div class="card-body">
+        <h6 class="fw-bold mb-3" style="color:var(--navy)">
+          <i class="bi bi-info-circle me-1"></i> What Drive integration enables
+        </h6>
+        <ul class="mb-0" style="font-size:.88rem; line-height:2">
+          <li>Upload proposal artifacts directly to Google Drive</li>
+          <li>Each project gets its own Drive sub-folder inside <strong>CaptureIQ/</strong></li>
+          <li>Files are accessible to your whole team via Drive sharing</li>
+          <li>Download Drive files from within CaptureIQ</li>
+          <li>Open files directly in Google Drive with one click</li>
+          <li>Local storage still works alongside Drive — your choice per upload</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

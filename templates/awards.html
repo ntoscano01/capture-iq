@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}Awards — SBIR Pipeline{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <i class="bi bi-trophy text-success fs-5"></i>
+  <h1>Awards</h1>
+  <span class="badge bg-success ms-2">{{ rows|length }} shown</span>
+</div>
+
+<!-- Filters -->
+<form method="get" class="filter-bar">
+  <div class="row g-2 align-items-end">
+    <div class="col-md-3">
+      <label class="form-label mb-1 fw-semibold" style="font-size:.75rem">Keyword</label>
+      <input type="text" name="keyword" class="form-control form-control-sm"
+             placeholder="Title, abstract, keywords…" value="{{ keyword }}">
+    </div>
+    <div class="col-md-2">
+      <label class="form-label mb-1 fw-semibold" style="font-size:.75rem">Agency</label>
+      <select name="agency" class="form-select form-select-sm">
+        <option value="">All Agencies</option>
+        {% for a in filters.agencies %}
+          <option value="{{ a }}" {{ 'selected' if agency == a }}>{{ a }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label mb-1 fw-semibold" style="font-size:.75rem">Phase</label>
+      <select name="phase" class="form-select form-select-sm">
+        <option value="">All Phases</option>
+        {% for p in filters.phases %}
+          <option value="{{ p }}" {{ 'selected' if phase == p }}>{{ p }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label mb-1 fw-semibold" style="font-size:.75rem">Year</label>
+      <select name="year" class="form-select form-select-sm">
+        <option value="">All Years</option>
+        {% for y in filters.years %}
+          <option value="{{ y }}" {{ 'selected' if year == y|string }}>{{ y }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label mb-1 fw-semibold" style="font-size:.75rem">Source</label>
+      <select name="source" class="form-select form-select-sm">
+        <option value="">All Sources</option>
+        {% for s in filters.sources %}
+          <option value="{{ s }}" {{ 'selected' if source == s }}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-1 d-flex gap-1">
+      <button type="submit" class="btn btn-success btn-sm w-100"><i class="bi bi-funnel"></i></button>
+      <a href="{{ url_for('awards') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-x"></i></a>
+    </div>
+  </div>
+</form>
+
+<!-- Table -->
+<div class="table-card">
+  <table class="table table-hover align-middle">
+    <thead>
+      <tr>
+        <th>Title</th>
+        <th>Company</th>
+        <th>Agency</th>
+        <th>Phase</th>
+        <th>Program</th>
+        <th>Year</th>
+        <th class="text-end">Amount</th>
+        <th>Source</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>
+          <a href="{{ url_for('award_detail', award_id=row.id) }}" class="fw-semibold text-decoration-none">
+            {{ row.title[:70] }}{% if row.title|length > 70 %}…{% endif %}
+          </a>
+          {% if row.pi_name %}<br><small class="text-muted">PI: {{ row.pi_name }}</small>{% endif %}
+        </td>
+        <td>{{ row.company or '—' }}</td>
+        <td>{{ row.agency or '—' }}</td>
+        <td>
+          {% if row.phase %}
+            <span class="badge bg-primary">{{ row.phase }}</span>
+          {% else %}—{% endif %}
+        </td>
+        <td>{{ row.program or '—' }}</td>
+        <td>{{ row.award_year or '—' }}</td>
+        <td class="text-end">
+          {% if row.amount %}
+            ${{ "{:,.0f}".format(row.amount) }}
+          {% else %}—{% endif %}
+        </td>
+        <td><span class="badge bg-secondary">{{ row.source or '—' }}</span></td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="8" class="text-center text-muted py-5">
+          <i class="bi bi-trophy fs-2 d-block mb-2"></i>
+          No awards found. <a href="{{ url_for('ingest_page') }}">Ingest awards data</a> to get started.
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if rows|length == per_page %}
+<div class="d-flex justify-content-center mt-3">
+  <nav><ul class="pagination pagination-sm">
+    {% if page > 1 %}
+    <li class="page-item">
+      <a class="page-link" href="?page={{ page-1 }}&keyword={{ keyword }}&agency={{ agency }}&phase={{ phase }}&year={{ year }}">« Prev</a>
+    </li>
+    {% endif %}
+    <li class="page-item active"><span class="page-link">{{ page }}</span></li>
+    <li class="page-item">
+      <a class="page-link" href="?page={{ page+1 }}&keyword={{ keyword }}&agency={{ agency }}&phase={{ phase }}&year={{ year }}">Next »</a>
+    </li>
+  </ul></nav>
+</div>
+{% endif %}
+{% endblock %}
