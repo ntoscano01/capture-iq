@@ -1,0 +1,33 @@
+# Build output — never commit these
+dist/
+build/
+*.spec.bak
+
+# PyInstaller
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Database — user data stays local
+sbir_pipeline.db
+captureiq.db
+
+# Uploaded files
+project_uploads/
+
+# Google Drive credentials & tokens — sensitive, never commit
+credentials.json
+gdrive_token.json
+
+# macOS junk
+.DS_Store
+*.swp
+
+# Python virtual environments
+venv/
+.venv/
+env/
+
+# Test/temp files
+test.txt
+*.log

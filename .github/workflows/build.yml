@@ -1,0 +1,103 @@
+name: Build CaptureIQ
+
+# ── Triggers ──────────────────────────────────────────────────────────────────
+# • Every push to main  → builds both platforms, uploads as downloadable artifacts
+# • Push of a v* tag    → same build + creates a public GitHub Release with zips attached
+# • Manual trigger      → run any time from the Actions tab
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+# ── Build job (runs on macOS AND Windows in parallel) ────────────────────────
+jobs:
+  build:
+    strategy:
+      fail-fast: false      # don't cancel the other platform if one fails
+      matrix:
+        include:
+          - os: macos-latest
+            spec: CaptureIQ.spec
+            artifact: CaptureIQ-mac
+
+          - os: windows-latest
+            spec: CaptureIQ_windows.spec
+            artifact: CaptureIQ-windows
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      # 1. Check out source
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2. Set up Python 3.11 (matches your local Anaconda version)
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      # 3. Install app dependencies + PyInstaller
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install pyinstaller
+          pip install -r requirements.txt
+
+      # 4. Build with PyInstaller
+      - name: Build with PyInstaller
+        run: pyinstaller ${{ matrix.spec }} --noconfirm
+
+      # 5a. Zip the macOS .app bundle
+      - name: Zip (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cd dist
+          zip -r ../CaptureIQ-mac.zip CaptureIQ.app
+          echo "Built: CaptureIQ-mac.zip"
+
+      # 5b. Zip the Windows folder
+      - name: Zip (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist\CaptureIQ -DestinationPath CaptureIQ-windows.zip
+          Write-Host "Built: CaptureIQ-windows.zip"
+
+      # 6. Upload zip as a workflow artifact (available for 30 days in Actions tab)
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: CaptureIQ-*.zip
+          retention-days: 30
+
+  # ── Release job (only runs when a v* tag is pushed) ─────────────────────────
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write     # required to create a GitHub Release
+
+    steps:
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: CaptureIQ-mac
+          path: artifacts
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: CaptureIQ-windows
+          path: artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*.zip
+          generate_release_notes: true   # auto-generates notes from commit messages
+          name: CaptureIQ ${{ github.ref_name }}
