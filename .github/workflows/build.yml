@@ -43,9 +43,9 @@ jobs:
           pip install pyinstaller
           pip install -r requirements.txt
 
-      - name: Build with PyInstaller (macOS universal)
+      - name: Build with PyInstaller (macOS)
         if: runner.os == 'macOS'
-        run: pyinstaller ${{ matrix.spec }} --noconfirm --target-arch universal2
+        run: pyinstaller ${{ matrix.spec }} --noconfirm
 
       - name: Build with PyInstaller (Windows)
         if: runner.os == 'Windows'
