@@ -6,20 +6,21 @@ on:
     tags: ['v*']
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true   # suppress Node.js 20 deprecation warnings
+
 jobs:
   build:
     strategy:
       fail-fast: false
       matrix:
         include:
-          # Universal macOS build — runs on both Intel and Apple Silicon
           - os: macos-latest
             spec: CaptureIQ.spec
             artifact: CaptureIQ-mac
             zip_name: CaptureIQ-mac.zip
 
-          # Windows
-          - os: windows-latest
+          - os: windows-2025
             spec: CaptureIQ_windows.spec
             artifact: CaptureIQ-windows
             zip_name: CaptureIQ-windows.zip
@@ -66,7 +67,6 @@ jobs:
           path: ${{ matrix.zip_name }}
           retention-days: 30
 
-  # ── Release (only on v* tags) ─────────────────────────────────────────────
   release:
     needs: build
     if: startsWith(github.ref, 'refs/tags/v')
