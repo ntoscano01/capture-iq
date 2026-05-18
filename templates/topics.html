@@ -14,6 +14,13 @@
   {% elif topic_status == 'passed' %}
     <span class="badge bg-danger ms-1"><i class="bi bi-hand-thumbs-down-fill"></i> Passed</span>
   {% endif %}
+  <a href="{{ url_for('export_topics_csv',
+                      agency=agency, phase=phase, source=source,
+                      keyword=keyword, favorited=favorited,
+                      topic_status=topic_status) }}"
+     class="btn btn-outline-success btn-sm ms-auto">
+    <i class="bi bi-download"></i> Export CSV
+  </a>
 </div>
 
 <form method="get" class="filter-bar">

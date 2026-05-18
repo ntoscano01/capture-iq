@@ -6,6 +6,8 @@ Local offline app for ingesting and querying SBIR solicitation data.
 import os
 import threading
 from datetime import datetime
+import csv
+import io
 from flask import Flask, render_template, request, redirect, url_for, jsonify, flash, Response, send_file
 from werkzeug.utils import secure_filename
 
@@ -586,6 +588,64 @@ def topics():
                            agency=agency, phase=phase, source=source,
                            keyword=keyword, favorited=favorited,
                            topic_status=topic_status)
+
+
+# ── Topics CSV Export ──────────────────────────────────────────────────────────
+
+@app.route("/topics/export.csv")
+def export_topics_csv():
+    """Export all topics matching current filters as a CSV download."""
+    agency       = request.args.get("agency", "")
+    phase        = request.args.get("phase", "")
+    source       = request.args.get("source", "")
+    keyword      = request.args.get("keyword", "")
+    favorited    = request.args.get("favorited", "")
+    topic_status = request.args.get("topic_status", "")
+
+    rows = db.get_topics(
+        agency=agency or None,
+        phase=phase or None,
+        source=source or None,
+        keyword=keyword or None,
+        favorited=True if favorited == "1" else None,
+        topic_status=topic_status if topic_status in ("nominated", "passed") else None,
+        limit=10000,   # export all matching rows
+        offset=0,
+    )
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # Header row
+    writer.writerow([
+        "Topic #", "Title", "Agency", "Branch", "Phase", "Source",
+        "Favorited", "Status"
+    ])
+
+    for row in rows:
+        status_label = ""
+        if row["topic_status"] == "nominated":
+            status_label = "Nominated"
+        elif row["topic_status"] == "passed":
+            status_label = "Passed"
+
+        writer.writerow([
+            row["topic_number"] or "",
+            row["title"] or "",
+            row["agency"] or "",
+            row["branch"] or "",
+            row["phase"] or "",
+            row["source"] or "",
+            "Yes" if row["favorited"] else "No",
+            status_label,
+        ])
+
+    output.seek(0)
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=captureiq_topics.csv"},
+    )
 
 
 # ── Search ─────────────────────────────────────────────────────────────────────
