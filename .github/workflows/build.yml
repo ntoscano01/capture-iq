@@ -1,33 +1,22 @@
 name: Build CaptureIQ
 
-# ── Triggers ──────────────────────────────────────────────────────────────────
-# • Every push to main  → builds all platforms, uploads as downloadable artifacts
-# • Push of a v* tag    → same build + creates a public GitHub Release with zips attached
-# • Manual trigger      → run any time from the Actions tab
 on:
   push:
     branches: [main]
     tags: ['v*']
   workflow_dispatch:
 
-# ── Build job ─────────────────────────────────────────────────────────────────
 jobs:
   build:
     strategy:
       fail-fast: false
       matrix:
         include:
-          # Apple Silicon (M1/M2/M3) — macos-14 runner is arm64
-          - os: macos-14
+          # Universal macOS build — runs on both Intel and Apple Silicon
+          - os: macos-latest
             spec: CaptureIQ.spec
-            artifact: CaptureIQ-mac-arm64
-            zip_name: CaptureIQ-mac-AppleSilicon.zip
-
-          # Intel Mac — macos-13 runner is x86_64
-          - os: macos-13
-            spec: CaptureIQ.spec
-            artifact: CaptureIQ-mac-intel
-            zip_name: CaptureIQ-mac-Intel.zip
+            artifact: CaptureIQ-mac
+            zip_name: CaptureIQ-mac.zip
 
           # Windows
           - os: windows-latest
@@ -53,20 +42,22 @@ jobs:
           pip install pyinstaller
           pip install -r requirements.txt
 
-      - name: Build with PyInstaller
+      - name: Build with PyInstaller (macOS universal)
+        if: runner.os == 'macOS'
+        run: pyinstaller ${{ matrix.spec }} --noconfirm --target-arch universal2
+
+      - name: Build with PyInstaller (Windows)
+        if: runner.os == 'Windows'
         run: pyinstaller ${{ matrix.spec }} --noconfirm
 
       - name: Zip (macOS)
         if: runner.os == 'macOS'
-        run: |
-          cd dist
-          zip -r ../${{ matrix.zip_name }} CaptureIQ.app
+        run: cd dist && zip -r ../${{ matrix.zip_name }} CaptureIQ.app
 
       - name: Zip (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: |
-          Compress-Archive -Path dist\CaptureIQ -DestinationPath ${{ matrix.zip_name }}
+        run: Compress-Archive -Path dist\CaptureIQ -DestinationPath ${{ matrix.zip_name }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -75,7 +66,7 @@ jobs:
           path: ${{ matrix.zip_name }}
           retention-days: 30
 
-  # ── Release job (only runs when a v* tag is pushed) ─────────────────────────
+  # ── Release (only on v* tags) ─────────────────────────────────────────────
   release:
     needs: build
     if: startsWith(github.ref, 'refs/tags/v')
