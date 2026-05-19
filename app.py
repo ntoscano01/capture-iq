@@ -834,6 +834,15 @@ def export_topics_csv():
     )
 
 
+# ── Analytics ─────────────────────────────────────────────────────────────────
+
+@app.route("/analytics")
+@login_required
+def analytics():
+    data = db.get_analytics_data()
+    return render_template("analytics.html", data=data)
+
+
 # ── Search ─────────────────────────────────────────────────────────────────────
 
 @app.route("/search")

@@ -1,0 +1,340 @@
+{% extends "base.html" %}
+{% block title %}Analytics — CaptureIQ{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <i class="bi bi-bar-chart-line-fill text-primary fs-5"></i>
+  <h1>Analytics</h1>
+  <span class="text-muted ms-2" style="font-size:.85rem">
+    {{ data.total_topics }} topics · {{ data.total_agencies }} agencies
+    {% if data.year_min != '—' %} · {{ data.year_min }}–{{ data.year_max }}{% endif %}
+  </span>
+</div>
+
+{% if data.total_topics == 0 %}
+<div class="text-center text-muted py-5">
+  <i class="bi bi-bar-chart fs-1 d-block mb-3"></i>
+  <h5>No topics ingested yet</h5>
+  <p>Run an ingestion first to see analytics.</p>
+  <a href="{{ url_for('ingest_page') }}" class="btn btn-primary btn-sm">Go to Ingest</a>
+</div>
+{% else %}
+
+<!-- ── Summary Cards ─────────────────────────────────────────────────────── -->
+<div class="row g-3 mb-3">
+  <div class="col-6 col-md-3">
+    <div class="card stat-card">
+      <div class="card-body text-center">
+        <div class="stat-number">{{ data.total_topics }}</div>
+        <div class="stat-label">Total Topics</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card stat-card">
+      <div class="card-body text-center">
+        <div class="stat-number">{{ data.total_agencies }}</div>
+        <div class="stat-label">Agencies</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card stat-card">
+      <div class="card-body text-center">
+        <div class="stat-number">{{ data.by_branch|length }}</div>
+        <div class="stat-label">Components</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card stat-card">
+      <div class="card-body text-center">
+        <div class="stat-number">{{ data.year_min }}{% if data.year_min != data.year_max %}–{{ data.year_max }}{% endif %}</div>
+        <div class="stat-label">Year Range</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Row 1: Agency + Branch ─────────────────────────────────────────────── -->
+<div class="row g-3 mb-3">
+
+  <div class="col-md-6">
+    <div class="card h-100" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07)">
+      <div class="card-header bg-white fw-semibold" style="font-size:.88rem">
+        <i class="bi bi-building text-primary me-1"></i> Topics by Agency
+      </div>
+      <div class="card-body">
+        <canvas id="agencyChart" height="260"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card h-100" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07)">
+      <div class="card-header bg-white fw-semibold" style="font-size:.88rem">
+        <i class="bi bi-diagram-3 text-success me-1"></i> Topics by Component / Branch
+      </div>
+      <div class="card-body">
+        <canvas id="branchChart" height="260"></canvas>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Row 2: Trend over time ─────────────────────────────────────────────── -->
+{% if data.trend_years|length > 0 %}
+<div class="row g-3 mb-3">
+  <div class="col-12">
+    <div class="card" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07)">
+      <div class="card-header bg-white fw-semibold" style="font-size:.88rem">
+        <i class="bi bi-graph-up-arrow text-warning me-1"></i> Topic Volume Over Time — by Agency
+      </div>
+      <div class="card-body">
+        <canvas id="trendChart" height="120"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- ── Row 3: Keywords + Phase ────────────────────────────────────────────── -->
+<div class="row g-3 mb-3">
+
+  <div class="col-md-8">
+    <div class="card h-100" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07)">
+      <div class="card-header bg-white fw-semibold" style="font-size:.88rem">
+        <i class="bi bi-tag-fill text-danger me-1"></i> Top Capability Keywords
+        <span class="text-muted fw-normal" style="font-size:.75rem">(from titles, keywords &amp; tech areas)</span>
+      </div>
+      <div class="card-body">
+        <canvas id="keywordChart" height="200"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-4">
+    <div class="card h-100" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07)">
+      <div class="card-header bg-white fw-semibold" style="font-size:.88rem">
+        <i class="bi bi-pie-chart-fill text-purple me-1" style="color:#6f42c1"></i> Phase Distribution
+      </div>
+      <div class="card-body d-flex align-items-center justify-content-center">
+        <canvas id="phaseChart" height="220"></canvas>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Row 4: Status distribution ────────────────────────────────────────── -->
+{% if data.status_agencies|length > 0 %}
+<div class="row g-3 mb-3">
+  <div class="col-12">
+    <div class="card" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07)">
+      <div class="card-header bg-white fw-semibold" style="font-size:.88rem">
+        <i class="bi bi-hand-thumbs-up-fill text-success me-1"></i> Nominated &amp; Passed Topics by Agency
+      </div>
+      <div class="card-body">
+        <canvas id="statusChart" height="100"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- ── Source breakdown table ─────────────────────────────────────────────── -->
+<div class="row g-3 mb-3">
+  <div class="col-md-4">
+    <div class="card" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07)">
+      <div class="card-header bg-white fw-semibold" style="font-size:.88rem">
+        <i class="bi bi-cloud-download text-secondary me-1"></i> Topics by Source
+      </div>
+      <table class="table table-sm mb-0" style="font-size:.84rem">
+        <thead><tr><th>Source</th><th class="text-end">Count</th></tr></thead>
+        <tbody>
+          {% for row in data.by_source %}
+          <tr>
+            <td><span class="badge bg-secondary">{{ row.label }}</span></td>
+            <td class="text-end fw-semibold">{{ row.cnt }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endif %}{# end if topics > 0 #}
+{% endblock %}
+
+
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script>
+// ── Palette ────────────────────────────────────────────────────────────────────
+const PALETTE = [
+  '#003087','#1a4fa0','#2e86de','#54a0ff','#48dbfb',
+  '#1dd1a1','#10ac84','#f9ca24','#f0932b','#eb4d4b',
+  '#6f42c1','#e056fd','#686de0','#4bcffa','#0be881',
+];
+
+function palette(n) {
+  return Array.from({length: n}, (_, i) => PALETTE[i % PALETTE.length]);
+}
+
+// ── Data from Flask ────────────────────────────────────────────────────────────
+const byAgency   = {{ data.by_agency | tojson }};
+const byBranch   = {{ data.by_branch | tojson }};
+const byPhase    = {{ data.by_phase  | tojson }};
+const keywords   = {{ data.top_keywords | tojson }};
+const trendYears = {{ data.trend_years  | tojson }};
+const trendAgs   = {{ data.trend_agencies | tojson }};
+const trendData  = {{ data.trend_by_agency | tojson }};
+const statusAgs  = {{ data.status_agencies | tojson }};
+const statusData = {{ data.status_data | tojson }};
+
+const defaultOpts = {
+  responsive: true,
+  plugins: { legend: { display: false } },
+};
+
+// ── Agency bar chart ───────────────────────────────────────────────────────────
+if (document.getElementById('agencyChart')) {
+  new Chart(document.getElementById('agencyChart'), {
+    type: 'bar',
+    data: {
+      labels: byAgency.map(r => r.label),
+      datasets: [{
+        data: byAgency.map(r => r.cnt),
+        backgroundColor: palette(byAgency.length),
+        borderRadius: 4,
+      }]
+    },
+    options: {
+      ...defaultOpts,
+      indexAxis: 'y',
+      plugins: { legend: { display: false } },
+      scales: { x: { beginAtZero: true, ticks: { precision: 0 } } }
+    }
+  });
+}
+
+// ── Branch bar chart ───────────────────────────────────────────────────────────
+if (document.getElementById('branchChart')) {
+  new Chart(document.getElementById('branchChart'), {
+    type: 'bar',
+    data: {
+      labels: byBranch.map(r => r.label),
+      datasets: [{
+        data: byBranch.map(r => r.cnt),
+        backgroundColor: palette(byBranch.length).reverse(),
+        borderRadius: 4,
+      }]
+    },
+    options: {
+      ...defaultOpts,
+      indexAxis: 'y',
+      scales: { x: { beginAtZero: true, ticks: { precision: 0 } } }
+    }
+  });
+}
+
+// ── Trend line chart ───────────────────────────────────────────────────────────
+if (document.getElementById('trendChart') && trendYears.length > 0) {
+  const datasets = trendAgs.map((ag, i) => ({
+    label: ag,
+    data: trendYears.map(yr => (trendData[ag] || {})[yr] || 0),
+    borderColor: PALETTE[i % PALETTE.length],
+    backgroundColor: PALETTE[i % PALETTE.length] + '22',
+    fill: false,
+    tension: 0.3,
+    pointRadius: 4,
+    borderWidth: 2,
+  }));
+  new Chart(document.getElementById('trendChart'), {
+    type: 'line',
+    data: { labels: trendYears, datasets },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { display: true, position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } }
+      },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+    }
+  });
+}
+
+// ── Keyword horizontal bar chart ───────────────────────────────────────────────
+if (document.getElementById('keywordChart') && keywords.length > 0) {
+  new Chart(document.getElementById('keywordChart'), {
+    type: 'bar',
+    data: {
+      labels: keywords.map(k => k[0]),
+      datasets: [{
+        data: keywords.map(k => k[1]),
+        backgroundColor: '#2e86de',
+        borderRadius: 3,
+      }]
+    },
+    options: {
+      ...defaultOpts,
+      indexAxis: 'y',
+      scales: { x: { beginAtZero: true, ticks: { precision: 0 } } }
+    }
+  });
+}
+
+// ── Phase donut chart ──────────────────────────────────────────────────────────
+if (document.getElementById('phaseChart') && byPhase.length > 0) {
+  new Chart(document.getElementById('phaseChart'), {
+    type: 'doughnut',
+    data: {
+      labels: byPhase.map(r => 'Phase ' + r.label),
+      datasets: [{
+        data: byPhase.map(r => r.cnt),
+        backgroundColor: ['#003087','#2e86de','#54a0ff','#adb5bd'],
+        borderWidth: 2,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { display: true, position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } }
+      }
+    }
+  });
+}
+
+// ── Status grouped bar chart ───────────────────────────────────────────────────
+if (document.getElementById('statusChart') && statusAgs.length > 0) {
+  new Chart(document.getElementById('statusChart'), {
+    type: 'bar',
+    data: {
+      labels: statusAgs,
+      datasets: [
+        {
+          label: 'Nominated',
+          data: statusAgs.map(ag => (statusData.nominated || {})[ag] || 0),
+          backgroundColor: '#1dd1a1',
+          borderRadius: 4,
+        },
+        {
+          label: 'Passed',
+          data: statusAgs.map(ag => (statusData.passed || {})[ag] || 0),
+          backgroundColor: '#eb4d4b',
+          borderRadius: 4,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { display: true, position: 'top', labels: { boxWidth: 12, font: { size: 11 } } }
+      },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+    }
+  });
+}
+</script>
+{% endblock %}

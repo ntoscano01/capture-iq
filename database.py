@@ -1105,6 +1105,148 @@ def set_user_topic_status(user_id: int, topic_id: int, status: str) -> str:
     return new_val
 
 
+# ── Analytics ──────────────────────────────────────────────────────────────────
+
+def get_analytics_data() -> dict:
+    """Aggregate all data needed for the Analytics page."""
+    import re
+    from collections import Counter
+
+    STOP_WORDS = {
+        "the","and","for","with","that","this","from","are","have","been",
+        "will","can","may","which","their","into","also","more","other",
+        "using","used","use","based","new","high","system","systems",
+        "data","technology","technologies","research","development",
+        "support","provide","including","such","through","advanced",
+        "improved","current","during","these","requirements","required",
+        "ability","capabilities","capability","potential","approach",
+        "program","programs","phase","topics","topic","sbir","sttr",
+        "dod","navy","air","force","army","dla","darpa","oni","socom",
+        "need","needs","would","could","should","small","business","company",
+    }
+
+    with get_db() as conn:
+
+        # ── Topics by agency ──────────────────────────────────────────────
+        by_agency = conn.execute("""
+            SELECT COALESCE(agency,'Unknown') as label, COUNT(*) as cnt
+            FROM topics
+            GROUP BY label ORDER BY cnt DESC LIMIT 15
+        """).fetchall()
+
+        # ── Topics by branch/component ────────────────────────────────────
+        by_branch = conn.execute("""
+            SELECT COALESCE(branch,'Unknown') as label, COUNT(*) as cnt
+            FROM topics WHERE branch IS NOT NULL AND branch != ''
+            GROUP BY label ORDER BY cnt DESC LIMIT 20
+        """).fetchall()
+
+        # ── Topics by year ────────────────────────────────────────────────
+        by_year = conn.execute("""
+            SELECT COALESCE(solicitation_year,'Unknown') as yr, COUNT(*) as cnt
+            FROM topics
+            WHERE solicitation_year IS NOT NULL AND solicitation_year != ''
+            GROUP BY yr ORDER BY yr ASC
+        """).fetchall()
+
+        # ── Topics by year AND agency (top 6 agencies) ────────────────────
+        top_agencies = [r[0] for r in conn.execute("""
+            SELECT COALESCE(agency,'Unknown') as a, COUNT(*) as cnt
+            FROM topics GROUP BY a ORDER BY cnt DESC LIMIT 6
+        """).fetchall()]
+
+        trend_rows = conn.execute("""
+            SELECT COALESCE(solicitation_year,'Unknown') as yr,
+                   COALESCE(agency,'Unknown') as ag,
+                   COUNT(*) as cnt
+            FROM topics
+            WHERE solicitation_year IS NOT NULL AND solicitation_year != ''
+            GROUP BY yr, ag ORDER BY yr ASC
+        """).fetchall()
+
+        years_sorted = sorted({r[0] for r in trend_rows if r[0] != 'Unknown'})
+        trend_by_agency = {}
+        for ag in top_agencies:
+            trend_by_agency[ag] = {yr: 0 for yr in years_sorted}
+        for r in trend_rows:
+            if r[1] in trend_by_agency and r[0] in years_sorted:
+                trend_by_agency[r[1]][r[0]] = r[2]
+
+        # ── Phase distribution ────────────────────────────────────────────
+        by_phase = conn.execute("""
+            SELECT COALESCE(phase,'Unknown') as label, COUNT(*) as cnt
+            FROM topics GROUP BY label ORDER BY cnt DESC
+        """).fetchall()
+
+        # ── Source distribution ───────────────────────────────────────────
+        by_source = conn.execute("""
+            SELECT COALESCE(source,'Unknown') as label, COUNT(*) as cnt
+            FROM topics GROUP BY label ORDER BY cnt DESC
+        """).fetchall()
+
+        # ── Nomination/pass rates by agency ───────────────────────────────
+        status_rows = conn.execute("""
+            SELECT COALESCE(t.agency,'Unknown') as ag,
+                   utp.topic_status,
+                   COUNT(*) as cnt
+            FROM user_topic_prefs utp
+            JOIN topics t ON utp.topic_id = t.id
+            WHERE utp.topic_status IN ('nominated','passed')
+            GROUP BY ag, utp.topic_status
+            ORDER BY ag
+        """).fetchall()
+
+        status_agencies = sorted({r[0] for r in status_rows})
+        status_data = {
+            "nominated": {ag: 0 for ag in status_agencies},
+            "passed":    {ag: 0 for ag in status_agencies},
+        }
+        for r in status_rows:
+            status_data[r[1]][r[0]] = r[2]
+
+        # ── Keyword frequency ─────────────────────────────────────────────
+        keyword_rows = conn.execute("""
+            SELECT keywords, tech_areas, title FROM topics
+            WHERE keywords IS NOT NULL OR tech_areas IS NOT NULL
+        """).fetchall()
+
+        word_counter = Counter()
+        for row in keyword_rows:
+            combined = " ".join(filter(None, [row[0], row[1], row[2]]))
+            words = re.findall(r"[a-zA-Z]{4,}", combined.lower())
+            word_counter.update(w for w in words if w not in STOP_WORDS)
+
+        top_keywords = word_counter.most_common(30)
+
+        # ── Summary stats ─────────────────────────────────────────────────
+        total_topics = conn.execute("SELECT COUNT(*) FROM topics").fetchone()[0]
+        total_agencies = conn.execute(
+            "SELECT COUNT(DISTINCT agency) FROM topics WHERE agency IS NOT NULL"
+        ).fetchone()[0]
+        year_range = conn.execute("""
+            SELECT MIN(solicitation_year), MAX(solicitation_year)
+            FROM topics WHERE solicitation_year IS NOT NULL AND solicitation_year != ''
+        """).fetchone()
+
+    return {
+        "total_topics":    total_topics,
+        "total_agencies":  total_agencies,
+        "year_min":        year_range[0] or "—",
+        "year_max":        year_range[1] or "—",
+        "by_agency":       [dict(r) for r in by_agency],
+        "by_branch":       [dict(r) for r in by_branch],
+        "by_year":         [dict(r) for r in by_year],
+        "by_phase":        [dict(r) for r in by_phase],
+        "by_source":       [dict(r) for r in by_source],
+        "trend_years":     years_sorted,
+        "trend_agencies":  top_agencies,
+        "trend_by_agency": trend_by_agency,
+        "top_keywords":    top_keywords,
+        "status_agencies": status_agencies,
+        "status_data":     status_data,
+    }
+
+
 def get_distinct(table: str, column: str) -> list:
     allowed = {
         "solicitations": ["agency", "branch", "phase", "program", "source", "status"],
