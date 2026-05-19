@@ -167,6 +167,28 @@ def init_db():
                 created_at      TEXT DEFAULT (datetime('now'))
             );
 
+            -- ── Users & per-user topic prefs ────────────────────────────────
+            CREATE TABLE IF NOT EXISTS users (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                username      TEXT UNIQUE NOT NULL,
+                email         TEXT,
+                password_hash TEXT NOT NULL,
+                role          TEXT DEFAULT 'user',
+                is_active     INTEGER DEFAULT 1,
+                created_at    TEXT DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS user_topic_prefs (
+                user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                topic_id     INTEGER NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
+                favorited    INTEGER DEFAULT 0,
+                topic_status TEXT DEFAULT '',
+                PRIMARY KEY (user_id, topic_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_utp_user ON user_topic_prefs(user_id);
+            CREATE INDEX IF NOT EXISTS idx_utp_topic ON user_topic_prefs(topic_id);
+
             CREATE INDEX IF NOT EXISTS idx_projects_topic ON projects(topic_id);
             CREATE INDEX IF NOT EXISTS idx_projects_stage ON projects(stage);
             CREATE INDEX IF NOT EXISTS idx_pfiles_project ON project_files(project_id);
@@ -490,28 +512,56 @@ def upsert_topic(data: dict) -> tuple[bool, bool]:
 
 
 def get_topics(agency=None, phase=None, source=None, keyword=None,
-               favorited=None, topic_status=None, limit=200, offset=0):
-    sql = "SELECT * FROM topics WHERE 1=1"
-    params = []
+               favorited=None, topic_status=None, limit=200, offset=0,
+               user_id=None):
+    # When a user_id is provided, overlay per-user prefs via LEFT JOIN
+    if user_id:
+        sql = """
+            SELECT t.id, t.external_id, t.topic_number, t.title, t.agency, t.branch,
+                   t.phase, t.description, t.objective, t.phase1_desc, t.phase2_desc,
+                   t.phase3_desc, t.keywords, t.tech_areas, t.focus_areas, t.itar,
+                   t.cmmc_level, t.ref_docs, t.tech_contact, t.url,
+                   t.close_date, t.open_date, t.release_date, t.solicitation_year,
+                   t.solicitation_status, t.solicitation_id, t.source, t.score,
+                   t.notes, t.created_at, t.updated_at,
+                   COALESCE(utp.favorited, 0) as favorited,
+                   COALESCE(utp.topic_status, '') as topic_status
+            FROM topics t
+            LEFT JOIN user_topic_prefs utp ON t.id = utp.topic_id AND utp.user_id = ?
+            WHERE 1=1
+        """
+        params = [user_id]
+        fav_col    = "COALESCE(utp.favorited, 0)"
+        status_col = "COALESCE(utp.topic_status, '')"
+    else:
+        sql = "SELECT * FROM topics WHERE 1=1"
+        params = []
+        fav_col    = "favorited"
+        status_col = "topic_status"
+
     if agency:
-        sql += " AND agency = ?"
+        sql += " AND t.agency = ?" if user_id else " AND agency = ?"
         params.append(agency)
     if phase:
-        sql += " AND phase = ?"
+        sql += " AND t.phase = ?" if user_id else " AND phase = ?"
         params.append(phase)
     if source:
-        sql += " AND source = ?"
+        sql += " AND t.source = ?" if user_id else " AND source = ?"
         params.append(source)
     if favorited is not None:
-        sql += " AND favorited = ?"
+        sql += f" AND {fav_col} = ?"
         params.append(1 if favorited else 0)
     if topic_status is not None:
-        sql += " AND topic_status = ?"
+        sql += f" AND {status_col} = ?"
         params.append(topic_status)
     if keyword:
-        sql += " AND (title LIKE ? OR description LIKE ? OR keywords LIKE ?)"
+        if user_id:
+            sql += " AND (t.title LIKE ? OR t.description LIKE ? OR t.keywords LIKE ?)"
+        else:
+            sql += " AND (title LIKE ? OR description LIKE ? OR keywords LIKE ?)"
         params.extend([f"%{keyword}%", f"%{keyword}%", f"%{keyword}%"])
-    sql += " ORDER BY favorited DESC, score DESC, created_at DESC LIMIT ? OFFSET ?"
+    sql += f" ORDER BY {fav_col} DESC, t.score DESC, t.created_at DESC LIMIT ? OFFSET ?" if user_id \
+        else " ORDER BY favorited DESC, score DESC, created_at DESC LIMIT ? OFFSET ?"
     params.extend([limit, offset])
     with get_db() as conn:
         rows = conn.execute(sql, params).fetchall()
@@ -598,14 +648,19 @@ def full_search(keyword: str, limit=100):
 
 # ── Stats ──────────────────────────────────────────────────────────────────────
 
-def get_stats():
+def get_stats(user_id=None):
     with get_db() as conn:
-        topic_count      = conn.execute("SELECT COUNT(*) FROM topics").fetchone()[0]
-        fav_count        = conn.execute("SELECT COUNT(*) FROM topics WHERE favorited=1").fetchone()[0]
-        noted_count      = conn.execute("SELECT COUNT(*) FROM topics WHERE notes IS NOT NULL AND notes != ''").fetchone()[0]
-        itar_count       = conn.execute("SELECT COUNT(*) FROM topics WHERE itar=1").fetchone()[0]
-        nominated_count  = conn.execute("SELECT COUNT(*) FROM topics WHERE topic_status='nominated'").fetchone()[0]
-        passed_count     = conn.execute("SELECT COUNT(*) FROM topics WHERE topic_status='passed'").fetchone()[0]
+        topic_count = conn.execute("SELECT COUNT(*) FROM topics").fetchone()[0]
+        noted_count = conn.execute("SELECT COUNT(*) FROM topics WHERE notes IS NOT NULL AND notes != ''").fetchone()[0]
+        itar_count  = conn.execute("SELECT COUNT(*) FROM topics WHERE itar=1").fetchone()[0]
+        if user_id:
+            fav_count       = conn.execute("SELECT COUNT(*) FROM user_topic_prefs WHERE user_id=? AND favorited=1", (user_id,)).fetchone()[0]
+            nominated_count = conn.execute("SELECT COUNT(*) FROM user_topic_prefs WHERE user_id=? AND topic_status='nominated'", (user_id,)).fetchone()[0]
+            passed_count    = conn.execute("SELECT COUNT(*) FROM user_topic_prefs WHERE user_id=? AND topic_status='passed'", (user_id,)).fetchone()[0]
+        else:
+            fav_count       = conn.execute("SELECT COUNT(*) FROM topics WHERE favorited=1").fetchone()[0]
+            nominated_count = conn.execute("SELECT COUNT(*) FROM topics WHERE topic_status='nominated'").fetchone()[0]
+            passed_count    = conn.execute("SELECT COUNT(*) FROM topics WHERE topic_status='passed'").fetchone()[0]
         branches = conn.execute("""
             SELECT branch, COUNT(*) as cnt FROM topics
             WHERE branch IS NOT NULL AND branch != ''
@@ -961,6 +1016,94 @@ def log_ingest(source: str, added: int, updated: int,
 
 
 # ── Distinct filter values ─────────────────────────────────────────────────────
+
+# ── Users ──────────────────────────────────────────────────────────────────────
+
+def get_user_by_id(user_id: int) -> dict | None:
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def get_user_by_username(username: str) -> dict | None:
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
+    return dict(row) if row else None
+
+
+def get_all_users() -> list:
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT id, username, email, role, is_active, created_at FROM users ORDER BY id"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def count_users() -> int:
+    with get_db() as conn:
+        return conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+
+
+def create_user(username: str, email: str, password_hash: str, role: str = "user") -> int:
+    with get_db() as conn:
+        cur = conn.execute(
+            "INSERT INTO users (username, email, password_hash, role) VALUES (?,?,?,?)",
+            (username, email or "", password_hash, role)
+        )
+        return cur.lastrowid
+
+
+def update_user_password(user_id: int, password_hash: str):
+    with get_db() as conn:
+        conn.execute("UPDATE users SET password_hash=? WHERE id=?", (password_hash, user_id))
+
+
+def set_user_active(user_id: int, active: bool):
+    with get_db() as conn:
+        conn.execute("UPDATE users SET is_active=? WHERE id=?", (1 if active else 0, user_id))
+
+
+def delete_user(user_id: int):
+    with get_db() as conn:
+        conn.execute("DELETE FROM users WHERE id=?", (user_id,))
+
+
+# ── Per-user topic prefs ───────────────────────────────────────────────────────
+
+def toggle_user_topic_favorite(user_id: int, topic_id: int) -> bool:
+    """Toggle the user's favorite on a topic. Returns new boolean value."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT favorited FROM user_topic_prefs WHERE user_id=? AND topic_id=?",
+            (user_id, topic_id)
+        ).fetchone()
+        new_val = 0 if (row and row["favorited"]) else 1
+        conn.execute("""
+            INSERT INTO user_topic_prefs (user_id, topic_id, favorited)
+            VALUES (?,?,?)
+            ON CONFLICT(user_id, topic_id) DO UPDATE SET favorited=excluded.favorited
+        """, (user_id, topic_id, new_val))
+    return bool(new_val)
+
+
+def set_user_topic_status(user_id: int, topic_id: int, status: str) -> str:
+    """Toggle topic status for a user. Returns the new status value."""
+    allowed = {"nominated", "passed", ""}
+    if status not in allowed:
+        status = ""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT topic_status FROM user_topic_prefs WHERE user_id=? AND topic_id=?",
+            (user_id, topic_id)
+        ).fetchone()
+        new_val = "" if (row and row["topic_status"] == status) else status
+        conn.execute("""
+            INSERT INTO user_topic_prefs (user_id, topic_id, topic_status)
+            VALUES (?,?,?)
+            ON CONFLICT(user_id, topic_id) DO UPDATE SET topic_status=excluded.topic_status
+        """, (user_id, topic_id, new_val))
+    return new_val
+
 
 def get_distinct(table: str, column: str) -> list:
     allowed = {

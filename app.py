@@ -1,6 +1,6 @@
 """
-SBIR Pipeline - Flask Web Application
-Local offline app for ingesting and querying SBIR solicitation data.
+CaptureIQ - Flask Web Application
+Local/hosted app for managing SBIR solicitation pipeline and capture.
 """
 
 import os
@@ -10,6 +10,8 @@ import csv
 import io
 from flask import Flask, render_template, request, redirect, url_for, jsonify, flash, Response, send_file
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
+from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 
 import database as db
 
@@ -17,7 +19,40 @@ import database as db
 os.environ.setdefault("OAUTHLIB_INSECURE_TRANSPORT", "1")
 
 app = Flask(__name__)
-app.secret_key = "sbir-pipeline-local-secret"
+app.secret_key = os.environ.get("CAPTUREIQ_SECRET_KEY", "captureiq-local-secret-change-me")
+
+# ── Flask-Login setup ─────────────────────────────────────────────────────────
+
+login_manager = LoginManager(app)
+login_manager.login_view = "login"
+login_manager.login_message = "Please log in to access CaptureIQ."
+login_manager.login_message_category = "warning"
+
+
+class User(UserMixin):
+    def __init__(self, id, username, email, role, is_active=True):
+        self.id = id
+        self.username = username
+        self.email = email
+        self.role = role
+        self._active = bool(is_active)
+
+    @property
+    def is_active(self):
+        return self._active
+
+    @property
+    def is_admin(self):
+        return self.role == "admin"
+
+
+@login_manager.user_loader
+def load_user(user_id):
+    row = db.get_user_by_id(int(user_id))
+    if row:
+        return User(row["id"], row["username"], row["email"],
+                    row["role"], row["is_active"])
+    return None
 
 # Track background ingestion jobs
 _jobs: dict[str, dict] = {}
@@ -103,11 +138,143 @@ def ensure_db():
         app._db_ready = True
 
 
+# ── Auth — Login / Logout / Setup ─────────────────────────────────────────────
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    # Redirect to setup if no users exist yet
+    if db.count_users() == 0:
+        return redirect(url_for("setup"))
+    if current_user.is_authenticated:
+        return redirect(url_for("dashboard"))
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        row = db.get_user_by_username(username)
+        if row and row["is_active"] and check_password_hash(row["password_hash"], password):
+            user = User(row["id"], row["username"], row["email"],
+                        row["role"], row["is_active"])
+            login_user(user, remember=request.form.get("remember") == "1")
+            return redirect(request.args.get("next") or url_for("dashboard"))
+        flash("Invalid username or password.", "danger")
+    return render_template("login.html")
+
+
+@app.route("/logout")
+@login_required
+def logout():
+    logout_user()
+    flash("You have been logged out.", "info")
+    return redirect(url_for("login"))
+
+
+@app.route("/setup", methods=["GET", "POST"])
+def setup():
+    """First-run admin account creation. Only accessible when no users exist."""
+    if db.count_users() > 0:
+        return redirect(url_for("login"))
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        email    = request.form.get("email", "").strip()
+        password = request.form.get("password", "")
+        confirm  = request.form.get("confirm", "")
+        if not username or not password:
+            flash("Username and password are required.", "danger")
+        elif password != confirm:
+            flash("Passwords do not match.", "danger")
+        elif len(password) < 6:
+            flash("Password must be at least 6 characters.", "danger")
+        else:
+            db.create_user(username, email, generate_password_hash(password), role="admin")
+            flash(f"Admin account '{username}' created. Please log in.", "success")
+            return redirect(url_for("login"))
+    return render_template("setup.html")
+
+
+# ── Admin — User Management ────────────────────────────────────────────────────
+
+@app.route("/admin/users")
+@login_required
+def admin_users():
+    if not current_user.is_admin:
+        flash("Admin access required.", "danger")
+        return redirect(url_for("dashboard"))
+    users = db.get_all_users()
+    return render_template("admin_users.html", users=users)
+
+
+@app.route("/admin/users/create", methods=["POST"])
+@login_required
+def admin_create_user():
+    if not current_user.is_admin:
+        return redirect(url_for("dashboard"))
+    username = request.form.get("username", "").strip()
+    email    = request.form.get("email", "").strip()
+    password = request.form.get("password", "")
+    role     = request.form.get("role", "user")
+    if not username or not password:
+        flash("Username and password are required.", "danger")
+    elif db.get_user_by_username(username):
+        flash(f"Username '{username}' is already taken.", "danger")
+    elif len(password) < 6:
+        flash("Password must be at least 6 characters.", "danger")
+    else:
+        db.create_user(username, email, generate_password_hash(password), role)
+        flash(f"User '{username}' created successfully.", "success")
+    return redirect(url_for("admin_users"))
+
+
+@app.route("/admin/users/<int:user_id>/toggle", methods=["POST"])
+@login_required
+def admin_toggle_user(user_id):
+    if not current_user.is_admin:
+        return redirect(url_for("dashboard"))
+    if user_id == current_user.id:
+        flash("You cannot deactivate your own account.", "warning")
+    else:
+        row = db.get_user_by_id(user_id)
+        if row:
+            db.set_user_active(user_id, not row["is_active"])
+            flash(f"User '{row['username']}' {'activated' if not row['is_active'] else 'deactivated'}.", "success")
+    return redirect(url_for("admin_users"))
+
+
+@app.route("/admin/users/<int:user_id>/delete", methods=["POST"])
+@login_required
+def admin_delete_user(user_id):
+    if not current_user.is_admin:
+        return redirect(url_for("dashboard"))
+    if user_id == current_user.id:
+        flash("You cannot delete your own account.", "warning")
+    else:
+        row = db.get_user_by_id(user_id)
+        if row:
+            db.delete_user(user_id)
+            flash(f"User '{row['username']}' deleted.", "success")
+    return redirect(url_for("admin_users"))
+
+
+@app.route("/admin/users/<int:user_id>/reset-password", methods=["POST"])
+@login_required
+def admin_reset_password(user_id):
+    if not current_user.is_admin:
+        return redirect(url_for("dashboard"))
+    new_password = request.form.get("new_password", "")
+    if len(new_password) < 6:
+        flash("Password must be at least 6 characters.", "danger")
+    else:
+        db.update_user_password(user_id, generate_password_hash(new_password))
+        row = db.get_user_by_id(user_id)
+        flash(f"Password reset for '{row['username']}'.", "success")
+    return redirect(url_for("admin_users"))
+
+
 # ── Dashboard ──────────────────────────────────────────────────────────────────
 
 @app.route("/")
+@login_required
 def dashboard():
-    stats = db.get_stats()
+    stats = db.get_stats(user_id=current_user.id)
     capture_stats = db.get_capture_stats()
     return render_template("dashboard.html", stats=stats, jobs=_jobs,
                            capture_stats=capture_stats)
@@ -246,12 +413,14 @@ def topic_detail(topic_id: int):
 
 
 @app.route("/topics/<int:topic_id>/favorite", methods=["POST"])
+@login_required
 def toggle_topic_favorite(topic_id: int):
-    db.toggle_topic_favorite(topic_id)
+    db.toggle_user_topic_favorite(current_user.id, topic_id)
     return redirect(request.referrer or url_for("topic_detail", topic_id=topic_id))
 
 
 @app.route("/topics/<int:topic_id>/score", methods=["POST"])
+@login_required
 def set_topic_score(topic_id: int):
     score = float(request.form.get("score", 0))
     db.set_topic_score(topic_id, score)
@@ -259,6 +428,7 @@ def set_topic_score(topic_id: int):
 
 
 @app.route("/topics/<int:topic_id>/notes", methods=["POST"])
+@login_required
 def set_topic_notes(topic_id: int):
     notes = request.form.get("notes", "")
     db.set_topic_notes(topic_id, notes)
@@ -266,9 +436,10 @@ def set_topic_notes(topic_id: int):
 
 
 @app.route("/topics/<int:topic_id>/status", methods=["POST"])
+@login_required
 def set_topic_status(topic_id: int):
     status = request.form.get("status", "")
-    db.set_topic_status(topic_id, status)
+    db.set_user_topic_status(current_user.id, topic_id, status)
     return redirect(request.referrer or url_for("topics"))
 
 
@@ -557,6 +728,7 @@ def export_topic_docx(topic_id: int):
 
 
 @app.route("/topics")
+@login_required
 def topics():
     agency       = request.args.get("agency", "")
     phase        = request.args.get("phase", "")
@@ -577,6 +749,7 @@ def topics():
         topic_status=topic_status if topic_status in ("nominated", "passed") else None,
         limit=per_page,
         offset=offset,
+        user_id=current_user.id,
     )
     filters = {
         "agencies": db.get_distinct("topics", "agency"),
@@ -593,6 +766,7 @@ def topics():
 # ── Topics CSV Export ──────────────────────────────────────────────────────────
 
 @app.route("/topics/export.csv")
+@login_required
 def export_topics_csv():
     """Export all topics matching current filters as a CSV download."""
     agency       = request.args.get("agency", "")
@@ -609,8 +783,9 @@ def export_topics_csv():
         keyword=keyword or None,
         favorited=True if favorited == "1" else None,
         topic_status=topic_status if topic_status in ("nominated", "passed") else None,
-        limit=10000,   # export all matching rows
+        limit=10000,
         offset=0,
+        user_id=current_user.id,
     )
 
     output = io.StringIO()
@@ -651,6 +826,7 @@ def export_topics_csv():
 # ── Search ─────────────────────────────────────────────────────────────────────
 
 @app.route("/search")
+@login_required
 def search():
     keyword = request.args.get("q", "").strip()
     results = None
@@ -662,6 +838,7 @@ def search():
 # ── Ingestion ──────────────────────────────────────────────────────────────────
 
 @app.route("/ingest")
+@login_required
 def ingest_page():
     recent_logs = []
     with db.get_db() as conn:
@@ -674,6 +851,7 @@ def ingest_page():
 
 
 @app.route("/ingest/sbir-gov", methods=["POST"])
+@login_required
 def ingest_sbir_gov():
     source_type = request.form.get("source_type", "solicitations")
     agency  = request.form.get("agency", "")
@@ -710,6 +888,7 @@ def ingest_sbir_gov():
 
 
 @app.route("/ingest/sbir-topics", methods=["POST"])
+@login_required
 def ingest_sbir_topics():
     agency    = request.form.get("agency", "").strip()
     phase     = request.form.get("phase", "").strip()
@@ -750,6 +929,7 @@ def ingest_sbir_topics():
 
 
 @app.route("/ingest/navy", methods=["POST"])
+@login_required
 def ingest_navy():
     topics_url = request.form.get("topics_url", "").strip() or "https://www.navysbir.com/topics26_1.htm"
     max_topics = int(request.form.get("max_topics", 100))
@@ -777,6 +957,7 @@ def ingest_navy():
 
 
 @app.route("/ingest/dod", methods=["POST"])
+@login_required
 def ingest_dod():
     baa     = request.form.get("baa", "DOD_SBIR_2026_P1_CBZ").strip()
     keyword = request.form.get("keyword", "").strip()
@@ -829,6 +1010,7 @@ def api_dod_baas():
 # ── SBIR Capture — Projects ────────────────────────────────────────────────────
 
 @app.route("/projects")
+@login_required
 def projects():
     stage   = request.args.get("stage", "")
     keyword = request.args.get("keyword", "")
@@ -846,6 +1028,7 @@ def projects():
 
 
 @app.route("/projects/new", methods=["POST"])
+@login_required
 def create_project():
     topic_id = request.form.get("topic_id") or None
     if topic_id:
@@ -874,6 +1057,7 @@ def create_project():
 
 
 @app.route("/projects/<int:project_id>")
+@login_required
 def project_detail(project_id: int):
     project = db.get_project(project_id)
     if not project:
@@ -898,6 +1082,7 @@ def project_detail(project_id: int):
 
 
 @app.route("/projects/<int:project_id>/edit", methods=["POST"])
+@login_required
 def edit_project(project_id: int):
     db.update_project(project_id, {
         "name":        request.form.get("name", "").strip(),
@@ -911,6 +1096,7 @@ def edit_project(project_id: int):
 
 
 @app.route("/projects/<int:project_id>/stage", methods=["POST"])
+@login_required
 def set_project_stage(project_id: int):
     stage = request.form.get("stage", "Identified")
     db.set_project_stage(project_id, stage)
@@ -919,6 +1105,7 @@ def set_project_stage(project_id: int):
 
 
 @app.route("/projects/<int:project_id>/delete", methods=["POST"])
+@login_required
 def delete_project(project_id: int):
     project = db.get_project(project_id)
     if project:
@@ -938,6 +1125,7 @@ def delete_project(project_id: int):
 # ── SBIR Capture — Files ───────────────────────────────────────────────────────
 
 @app.route("/projects/<int:project_id>/files/upload", methods=["POST"])
+@login_required
 def upload_project_file(project_id: int):
     from integrations import google_drive as gd
 
@@ -1031,6 +1219,7 @@ def upload_project_file(project_id: int):
 
 
 @app.route("/projects/<int:project_id>/files/<int:file_id>/download")
+@login_required
 def download_project_file(project_id: int, file_id: int):
     from integrations import google_drive as gd
     file_rec = db.get_project_file(file_id, project_id)
@@ -1059,6 +1248,7 @@ def download_project_file(project_id: int, file_id: int):
 
 
 @app.route("/projects/<int:project_id>/files/<int:file_id>/delete", methods=["POST"])
+@login_required
 def delete_project_file(project_id: int, file_id: int):
     from integrations import google_drive as gd
     file_rec = db.get_project_file(file_id, project_id)
@@ -1088,6 +1278,7 @@ def toggle_checklist(project_id: int, item_id: int):
 
 
 @app.route("/projects/<int:project_id>/checklist/add", methods=["POST"])
+@login_required
 def add_checklist_item(project_id: int):
     label    = request.form.get("label", "").strip()
     category = request.form.get("category", "Custom").strip() or "Custom"
@@ -1098,6 +1289,7 @@ def add_checklist_item(project_id: int):
 
 
 @app.route("/projects/<int:project_id>/checklist/<int:item_id>/delete", methods=["POST"])
+@login_required
 def delete_checklist_item(project_id: int, item_id: int):
     db.delete_checklist_item(item_id, project_id)
     return redirect(url_for("project_detail", project_id=project_id))
@@ -1106,6 +1298,7 @@ def delete_checklist_item(project_id: int, item_id: int):
 # ── Google Drive Settings ──────────────────────────────────────────────────────
 
 @app.route("/settings/gdrive")
+@login_required
 def gdrive_settings():
     from integrations import google_drive as gd
     return render_template("gdrive_settings.html",
@@ -1114,6 +1307,7 @@ def gdrive_settings():
 
 
 @app.route("/settings/gdrive/connect")
+@login_required
 def gdrive_connect():
     from integrations import google_drive as gd
     if not gd.has_credentials_file():
@@ -1124,6 +1318,7 @@ def gdrive_connect():
 
 
 @app.route("/settings/gdrive/callback")
+@login_required
 def gdrive_callback():
     from integrations import google_drive as gd
     code = request.args.get("code")
@@ -1140,6 +1335,7 @@ def gdrive_callback():
 
 
 @app.route("/settings/gdrive/disconnect", methods=["POST"])
+@login_required
 def gdrive_disconnect():
     from integrations import google_drive as gd
     gd.revoke()
@@ -1150,6 +1346,7 @@ def gdrive_disconnect():
 # ── API endpoints (JSON) ───────────────────────────────────────────────────────
 
 @app.route("/ingest-log/<int:log_id>/delete", methods=["POST"])
+@login_required
 def delete_ingest_log(log_id: int):
     db.delete_ingest_log(log_id)
     return redirect(url_for("ingest_page"))
