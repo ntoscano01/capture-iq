@@ -180,6 +180,15 @@
         <i class="bi bi-box-arrow-right"></i>
       </a>
     </div>
+    <div style="padding:.4rem .75rem .6rem">
+      <form method="post" action="{{ url_for('shutdown') }}"
+            onsubmit="return confirm('Shut down CaptureIQ? The server will stop and you will need to relaunch it.')">
+        <button type="submit" class="btn btn-sm w-100"
+                style="background:rgba(220,53,69,.25); border:1px solid rgba(220,53,69,.4); color:rgba(255,255,255,.7); font-size:.75rem">
+          <i class="bi bi-power"></i> Quit CaptureIQ
+        </button>
+      </form>
+    </div>
     {% endif %}
   </div>
 </nav>

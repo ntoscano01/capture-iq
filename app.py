@@ -128,6 +128,17 @@ ALLOWED_EXTENSIONS = {
 def _allowed_file(filename: str) -> bool:
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
+# ── Shutdown ───────────────────────────────────────────────────────────────────
+
+@app.route("/shutdown", methods=["POST"])
+@login_required
+def shutdown():
+    """Shut down the local server. Available to all logged-in users."""
+    import signal, threading
+    threading.Timer(0.5, lambda: os.kill(os.getpid(), signal.SIGTERM)).start()
+    return render_template("shutdown.html")
+
+
 # ── Startup ────────────────────────────────────────────────────────────────────
 
 @app.before_request
