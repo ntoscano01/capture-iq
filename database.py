@@ -1191,28 +1191,34 @@ def get_analytics_data() -> dict:
             GROUP BY yr ORDER BY yr ASC
         """).fetchall()
 
-        # ── Topics by year AND agency (top 6 agencies) ────────────────────
-        top_agencies = [r[0] for r in conn.execute("""
-            SELECT COALESCE(agency,'Unknown') as a, COUNT(*) as cnt
-            FROM topics GROUP BY a ORDER BY cnt DESC LIMIT 6
+        # ── Topics by week AND branch (top 6 branches) ───────────────────
+        top_branches_trend = [r[0] for r in conn.execute("""
+            SELECT COALESCE(branch,'Unknown') as b, COUNT(*) as cnt
+            FROM topics WHERE branch IS NOT NULL AND branch != ''
+            GROUP BY b ORDER BY cnt DESC LIMIT 6
         """).fetchall()]
 
         trend_rows = conn.execute("""
-            SELECT COALESCE(solicitation_year,'Unknown') as yr,
-                   COALESCE(agency,'Unknown') as ag,
+            SELECT strftime('%Y-W%W', COALESCE(
+                       CASE WHEN open_date GLOB '????-??-??*' THEN open_date ELSE NULL END,
+                       created_at
+                   )) as wk,
+                   COALESCE(branch,'Unknown') as br,
                    COUNT(*) as cnt
             FROM topics
-            WHERE solicitation_year IS NOT NULL AND solicitation_year != ''
-            GROUP BY yr, ag ORDER BY yr ASC
+            WHERE branch IS NOT NULL AND branch != ''
+            GROUP BY wk, br
+            HAVING wk IS NOT NULL
+            ORDER BY wk ASC
         """).fetchall()
 
-        years_sorted = sorted({r[0] for r in trend_rows if r[0] != 'Unknown'})
-        trend_by_agency = {}
-        for ag in top_agencies:
-            trend_by_agency[ag] = {yr: 0 for yr in years_sorted}
+        weeks_sorted = sorted({r[0] for r in trend_rows if r[0] and r[0] != 'Unknown'})
+        trend_by_branch = {}
+        for br in top_branches_trend:
+            trend_by_branch[br] = {wk: 0 for wk in weeks_sorted}
         for r in trend_rows:
-            if r[1] in trend_by_agency and r[0] in years_sorted:
-                trend_by_agency[r[1]][r[0]] = r[2]
+            if r[1] in trend_by_branch and r[0] in weeks_sorted:
+                trend_by_branch[r[1]][r[0]] = r[2]
 
         # ── Phase distribution ────────────────────────────────────────────
         by_phase = conn.execute("""
@@ -1246,19 +1252,23 @@ def get_analytics_data() -> dict:
         for r in status_rows:
             status_data[r[1]][r[0]] = r[2]
 
-        # ── Keyword frequency ─────────────────────────────────────────────
-        keyword_rows = conn.execute("""
-            SELECT keywords, tech_areas, title FROM topics
-            WHERE keywords IS NOT NULL OR tech_areas IS NOT NULL
+        # ── Tech area frequency (tags, not word-split) ────────────────────
+        tech_area_rows = conn.execute("""
+            SELECT tech_areas FROM topics
+            WHERE tech_areas IS NOT NULL
+              AND tech_areas != ''
+              AND LOWER(TRIM(tech_areas)) NOT IN ('none','n/a','na','-','null')
         """).fetchall()
 
-        word_counter = Counter()
-        for row in keyword_rows:
-            combined = " ".join(filter(None, [row[0], row[1], row[2]]))
-            words = re.findall(r"[a-zA-Z]{4,}", combined.lower())
-            word_counter.update(w for w in words if w not in STOP_WORDS)
+        tech_counter = Counter()
+        for row in tech_area_rows:
+            parts = re.split(r'[,;]', row[0])
+            for part in parts:
+                part = part.strip()
+                if part and part.lower() not in ('none', 'n/a', 'na', '-', 'null', ''):
+                    tech_counter[part] += 1
 
-        top_keywords = word_counter.most_common(30)
+        top_keywords = tech_counter.most_common(30)
 
         # ── Summary stats ─────────────────────────────────────────────────
         total_topics = conn.execute("SELECT COUNT(*) FROM topics").fetchone()[0]
@@ -1280,9 +1290,9 @@ def get_analytics_data() -> dict:
         "by_year":         [dict(r) for r in by_year],
         "by_phase":        [dict(r) for r in by_phase],
         "by_source":       [dict(r) for r in by_source],
-        "trend_years":     years_sorted,
-        "trend_agencies":  top_agencies,
-        "trend_by_agency": trend_by_agency,
+        "trend_periods":   weeks_sorted,
+        "trend_branches":  top_branches_trend,
+        "trend_by_branch": trend_by_branch,
         "top_keywords":    top_keywords,
         "status_agencies": status_agencies,
         "status_data":     status_data,

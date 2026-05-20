@@ -56,40 +56,29 @@
   </div>
 </div>
 
-<!-- ── Row 1: Agency + Branch ─────────────────────────────────────────────── -->
-<div class="row g-3 mb-3">
-
-  <div class="col-md-6">
-    <div class="card h-100" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07)">
-      <div class="card-header bg-white fw-semibold" style="font-size:.88rem">
-        <i class="bi bi-building text-primary me-1"></i> Topics by Agency
-      </div>
-      <div class="card-body">
-        <canvas id="agencyChart" height="260"></canvas>
-      </div>
-    </div>
-  </div>
-
-  <div class="col-md-6">
-    <div class="card h-100" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07)">
-      <div class="card-header bg-white fw-semibold" style="font-size:.88rem">
-        <i class="bi bi-diagram-3 text-success me-1"></i> Topics by Component / Branch
-      </div>
-      <div class="card-body">
-        <canvas id="branchChart" height="260"></canvas>
-      </div>
-    </div>
-  </div>
-
-</div>
-
-<!-- ── Row 2: Trend over time ─────────────────────────────────────────────── -->
-{% if data.trend_years|length > 0 %}
+<!-- ── Row 1: Component Treemap (full width) ──────────────────────────────── -->
+{% if data.by_branch|length > 0 %}
 <div class="row g-3 mb-3">
   <div class="col-12">
     <div class="card" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07)">
       <div class="card-header bg-white fw-semibold" style="font-size:.88rem">
-        <i class="bi bi-graph-up-arrow text-warning me-1"></i> Topic Volume Over Time — by Agency
+        <i class="bi bi-diagram-3 text-success me-1"></i> Topics by Component
+      </div>
+      <div class="card-body" style="padding-bottom:.75rem">
+        <div id="branchTreemap" style="width:100%; height:320px; overflow:hidden;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- ── Row 2: Trend over time ─────────────────────────────────────────────── -->
+{% if data.trend_periods|length > 0 %}
+<div class="row g-3 mb-3">
+  <div class="col-12">
+    <div class="card" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07)">
+      <div class="card-header bg-white fw-semibold" style="font-size:.88rem">
+        <i class="bi bi-graph-up-arrow text-warning me-1"></i> Topic Volume Over Time — by Component
       </div>
       <div class="card-body">
         <canvas id="trendChart" height="120"></canvas>
@@ -106,7 +95,7 @@
     <div class="card h-100" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07)">
       <div class="card-header bg-white fw-semibold" style="font-size:.88rem">
         <i class="bi bi-tag-fill text-danger me-1"></i> Top Capability Keywords
-        <span class="text-muted fw-normal" style="font-size:.75rem">(from titles, keywords &amp; tech areas)</span>
+        <span class="text-muted fw-normal" style="font-size:.75rem">(from tech areas)</span>
       </div>
       <div class="card-body">
         <canvas id="keywordChart" height="200"></canvas>
@@ -117,7 +106,7 @@
   <div class="col-md-4">
     <div class="card h-100" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07)">
       <div class="card-header bg-white fw-semibold" style="font-size:.88rem">
-        <i class="bi bi-pie-chart-fill text-purple me-1" style="color:#6f42c1"></i> Phase Distribution
+        <i class="bi bi-pie-chart-fill me-1" style="color:#6f42c1"></i> Phase Distribution
       </div>
       <div class="card-body d-flex align-items-center justify-content-center">
         <canvas id="phaseChart" height="220"></canvas>
@@ -143,40 +132,19 @@
 </div>
 {% endif %}
 
-<!-- ── Source breakdown table ─────────────────────────────────────────────── -->
-<div class="row g-3 mb-3">
-  <div class="col-md-4">
-    <div class="card" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07)">
-      <div class="card-header bg-white fw-semibold" style="font-size:.88rem">
-        <i class="bi bi-cloud-download text-secondary me-1"></i> Topics by Source
-      </div>
-      <table class="table table-sm mb-0" style="font-size:.84rem">
-        <thead><tr><th>Source</th><th class="text-end">Count</th></tr></thead>
-        <tbody>
-          {% for row in data.by_source %}
-          <tr>
-            <td><span class="badge bg-secondary">{{ row.label }}</span></td>
-            <td class="text-end fw-semibold">{{ row.cnt }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-</div>
-
 {% endif %}{# end if topics > 0 #}
 {% endblock %}
 
 
 {% block scripts %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
 <script>
 // ── Palette ────────────────────────────────────────────────────────────────────
 const PALETTE = [
-  '#003087','#1a4fa0','#2e86de','#54a0ff','#48dbfb',
-  '#1dd1a1','#10ac84','#f9ca24','#f0932b','#eb4d4b',
-  '#6f42c1','#e056fd','#686de0','#4bcffa','#0be881',
+  '#003087','#2e86de','#1dd1a1','#f0932b','#6f42c1',
+  '#eb4d4b','#10ac84','#54a0ff','#f9ca24','#e056fd',
+  '#686de0','#48dbfb','#1a4fa0','#0be881','#4bcffa',
 ];
 
 function palette(n) {
@@ -184,83 +152,154 @@ function palette(n) {
 }
 
 // ── Data from Flask ────────────────────────────────────────────────────────────
-const byAgency   = {{ data.by_agency | tojson }};
-const byBranch   = {{ data.by_branch | tojson }};
-const byPhase    = {{ data.by_phase  | tojson }};
-const keywords   = {{ data.top_keywords | tojson }};
-const trendYears = {{ data.trend_years  | tojson }};
-const trendAgs   = {{ data.trend_agencies | tojson }};
-const trendData  = {{ data.trend_by_agency | tojson }};
-const statusAgs  = {{ data.status_agencies | tojson }};
-const statusData = {{ data.status_data | tojson }};
+const byBranch      = {{ data.by_branch    | tojson }};
+const byPhase       = {{ data.by_phase     | tojson }};
+const keywords      = {{ data.top_keywords | tojson }};
+const trendPeriods  = {{ data.trend_periods  | tojson }};
+const trendBranches = {{ data.trend_branches | tojson }};
+const trendData     = {{ data.trend_by_branch | tojson }};
+const statusAgs     = {{ data.status_agencies | tojson }};
+const statusData    = {{ data.status_data     | tojson }};
 
 const defaultOpts = {
   responsive: true,
   plugins: { legend: { display: false } },
 };
 
-// ── Agency bar chart ───────────────────────────────────────────────────────────
-if (document.getElementById('agencyChart')) {
-  new Chart(document.getElementById('agencyChart'), {
-    type: 'bar',
-    data: {
-      labels: byAgency.map(r => r.label),
-      datasets: [{
-        data: byAgency.map(r => r.cnt),
-        backgroundColor: palette(byAgency.length),
-        borderRadius: 4,
-      }]
-    },
-    options: {
-      ...defaultOpts,
-      indexAxis: 'y',
-      plugins: { legend: { display: false } },
-      scales: { x: { beginAtZero: true, ticks: { precision: 0 } } }
-    }
-  });
-}
+// ── Component Treemap (D3) ─────────────────────────────────────────────────────
+(function () {
+  const el = document.getElementById('branchTreemap');
+  if (!el || !byBranch.length) return;
 
-// ── Branch bar chart ───────────────────────────────────────────────────────────
-if (document.getElementById('branchChart')) {
-  new Chart(document.getElementById('branchChart'), {
-    type: 'bar',
-    data: {
-      labels: byBranch.map(r => r.label),
-      datasets: [{
-        data: byBranch.map(r => r.cnt),
-        backgroundColor: palette(byBranch.length).reverse(),
-        borderRadius: 4,
-      }]
-    },
-    options: {
-      ...defaultOpts,
-      indexAxis: 'y',
-      scales: { x: { beginAtZero: true, ticks: { precision: 0 } } }
-    }
-  });
-}
+  const filtered = byBranch.filter(r => r.label && r.label !== 'Unknown');
+  if (!filtered.length) return;
 
-// ── Trend line chart ───────────────────────────────────────────────────────────
-if (document.getElementById('trendChart') && trendYears.length > 0) {
-  const datasets = trendAgs.map((ag, i) => ({
-    label: ag,
-    data: trendYears.map(yr => (trendData[ag] || {})[yr] || 0),
+  const width  = el.clientWidth  || 900;
+  const height = el.clientHeight || 320;
+
+  const root = d3.hierarchy({ name: 'root', children: filtered.map(r => ({ name: r.label, value: r.cnt })) })
+    .sum(d => d.value || 0)
+    .sort((a, b) => b.value - a.value);
+
+  d3.treemap()
+    .size([width, height])
+    .paddingInner(3)
+    .paddingOuter(2)
+    .round(true)(root);
+
+  const svg = d3.select(el)
+    .append('svg')
+    .attr('width', width)
+    .attr('height', height)
+    .style('font-family', 'system-ui, -apple-system, sans-serif');
+
+  const cell = svg.selectAll('g')
+    .data(root.leaves())
+    .join('g')
+    .attr('transform', d => `translate(${d.x0},${d.y0})`);
+
+  // Background rect
+  cell.append('rect')
+    .attr('width',  d => Math.max(0, d.x1 - d.x0))
+    .attr('height', d => Math.max(0, d.y1 - d.y0))
+    .attr('fill',   (d, i) => PALETTE[i % PALETTE.length])
+    .attr('opacity', 0.88)
+    .attr('rx', 4);
+
+  // Label — name
+  cell.append('text')
+    .attr('x', 6)
+    .attr('y', d => {
+      const h = d.y1 - d.y0;
+      return h > 34 ? 16 : Math.min(16, h - 4);
+    })
+    .attr('fill', '#fff')
+    .attr('font-weight', '600')
+    .attr('font-size', d => {
+      const w = d.x1 - d.x0;
+      if (w < 36) return '0px';
+      return Math.min(12, Math.max(9, Math.floor(w / 14))) + 'px';
+    })
+    .text(d => d.data.name)
+    .each(function(d) {
+      // Clip text to cell width
+      const maxPx = d.x1 - d.x0 - 12;
+      const node  = this;
+      if (node.getComputedTextLength && node.getComputedTextLength() > maxPx) {
+        let txt = node.textContent;
+        while (txt.length > 1 && node.getComputedTextLength() > maxPx) {
+          txt = txt.slice(0, -2);
+          node.textContent = txt + '…';
+        }
+      }
+    });
+
+  // Label — count
+  cell.append('text')
+    .attr('x', 6)
+    .attr('y', d => {
+      const h = d.y1 - d.y0;
+      return h > 34 ? 30 : 99999; // hide if too short
+    })
+    .attr('fill', 'rgba(255,255,255,.75)')
+    .attr('font-size', d => {
+      const w = d.x1 - d.x0;
+      if (w < 36) return '0px';
+      return '10px';
+    })
+    .text(d => d.data.value);
+
+  // Tooltip on hover
+  const tip = d3.select('body').append('div')
+    .style('position', 'absolute')
+    .style('background', 'rgba(0,0,0,.78)')
+    .style('color', '#fff')
+    .style('padding', '4px 10px')
+    .style('border-radius', '5px')
+    .style('font-size', '12px')
+    .style('pointer-events', 'none')
+    .style('display', 'none');
+
+  cell
+    .on('mouseover', (event, d) => {
+      tip.style('display', 'block').text(`${d.data.name}: ${d.data.value}`);
+    })
+    .on('mousemove', event => {
+      tip.style('left', (event.pageX + 12) + 'px').style('top', (event.pageY - 28) + 'px');
+    })
+    .on('mouseout', () => tip.style('display', 'none'));
+})();
+
+// ── Trend line chart (by week, by component) ───────────────────────────────────
+if (document.getElementById('trendChart') && trendPeriods.length > 0) {
+  const datasets = trendBranches.map((br, i) => ({
+    label: br,
+    data: trendPeriods.map(wk => (trendData[br] || {})[wk] || 0),
     borderColor: PALETTE[i % PALETTE.length],
     backgroundColor: PALETTE[i % PALETTE.length] + '22',
     fill: false,
     tension: 0.3,
-    pointRadius: 4,
+    pointRadius: trendPeriods.length > 52 ? 0 : 3,
     borderWidth: 2,
   }));
   new Chart(document.getElementById('trendChart'), {
     type: 'line',
-    data: { labels: trendYears, datasets },
+    data: { labels: trendPeriods, datasets },
     options: {
       responsive: true,
       plugins: {
         legend: { display: true, position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } }
       },
-      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+      scales: {
+        x: {
+          ticks: {
+            maxTicksLimit: 20,
+            maxRotation: 45,
+            font: { size: 10 },
+          }
+        },
+        y: { beginAtZero: true, ticks: { precision: 0 } }
+      }
     }
   });
 }
