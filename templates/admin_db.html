@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}Database — CaptureIQ Admin{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <i class="bi bi-database-fill text-primary fs-5"></i>
+  <h1>Database Stats &amp; Backup</h1>
+</div>
+
+<!-- ── Summary Stats ─────────────────────────────────────────────────────── -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card stat-card">
+      <div class="card-body text-center">
+        <div class="stat-number">{{ stats.db_size_mb }}</div>
+        <div class="stat-label">DB Size (MB)</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card stat-card">
+      <div class="card-body text-center">
+        <div class="stat-number">{{ stats.topic_count }}</div>
+        <div class="stat-label">Total Topics</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card stat-card">
+      <div class="card-body text-center">
+        <div class="stat-number">{{ stats.project_count }}</div>
+        <div class="stat-label">Projects</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card stat-card">
+      <div class="card-body text-center">
+        <div class="stat-number">{{ stats.audit_count }}</div>
+        <div class="stat-label">Audit Events</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+
+  <!-- ── Database Backup ────────────────────────────────────────────── -->
+  <div class="col-md-6">
+    <div class="card h-100" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07)">
+      <div class="card-header bg-white fw-semibold" style="font-size:.88rem">
+        <i class="bi bi-cloud-arrow-down text-primary me-1"></i> Database Backup
+      </div>
+      <div class="card-body">
+        <p class="text-muted mb-3" style="font-size:.88rem">
+          Download a complete copy of the CaptureIQ database. Store it in a safe location.
+          The file contains all topics, users, projects, and audit history.
+        </p>
+        <table class="table table-sm mb-4" style="font-size:.85rem">
+          <tbody>
+            <tr>
+              <td class="text-muted">File size</td>
+              <td class="fw-semibold">{{ stats.db_size_mb }} MB</td>
+            </tr>
+            <tr>
+              <td class="text-muted">Last ingest</td>
+              <td class="fw-semibold">
+                {% if stats.last_ingest_source %}
+                  {{ stats.last_ingest_source }}
+                  <span class="text-muted ms-1" style="font-size:.8rem">
+                    {{ stats.last_ingest_at[:16].replace('T',' ') if stats.last_ingest_at else '' }}
+                  </span>
+                {% else %}
+                  <span class="text-muted">Never</span>
+                {% endif %}
+              </td>
+            </tr>
+            <tr>
+              <td class="text-muted">Total ingest runs</td>
+              <td class="fw-semibold">{{ stats.ingest_log_count }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <a href="{{ url_for('admin_db_backup') }}" class="btn btn-primary btn-sm">
+          <i class="bi bi-download me-1"></i> Download Backup (.db)
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── User Summary ───────────────────────────────────────────────── -->
+  <div class="col-md-6">
+    <div class="card h-100" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07)">
+      <div class="card-header bg-white fw-semibold" style="font-size:.88rem">
+        <i class="bi bi-people text-success me-1"></i> User Summary
+      </div>
+      <div class="card-body">
+        <table class="table table-sm mb-4" style="font-size:.85rem">
+          <tbody>
+            <tr>
+              <td class="text-muted">Total users</td>
+              <td class="fw-semibold">{{ stats.user_count }}</td>
+            </tr>
+            <tr>
+              <td class="text-muted">Active users</td>
+              <td class="fw-semibold text-success">{{ stats.active_users }}</td>
+            </tr>
+            <tr>
+              <td class="text-muted">Locked accounts</td>
+              <td class="fw-semibold {% if stats.locked_users > 0 %}text-danger{% endif %}">
+                {{ stats.locked_users }}
+              </td>
+            </tr>
+            <tr>
+              <td class="text-muted">Failed logins (24h)</td>
+              <td class="fw-semibold {% if stats.failed_logins_24h > 0 %}text-warning{% endif %}">
+                {{ stats.failed_logins_24h }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <a href="{{ url_for('admin_users') }}" class="btn btn-outline-primary btn-sm me-2">
+          <i class="bi bi-people-fill me-1"></i> Manage Users
+        </a>
+        <a href="{{ url_for('admin_audit_log') }}" class="btn btn-outline-secondary btn-sm">
+          <i class="bi bi-journal-text me-1"></i> View Audit Log
+        </a>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Recent Logins ──────────────────────────────────────────────────────── -->
+{% if stats.recent_logins %}
+<div class="card" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07)">
+  <div class="card-header bg-white fw-semibold" style="font-size:.88rem">
+    <i class="bi bi-person-check text-secondary me-1"></i> Recent Logins
+  </div>
+  <table class="table table-sm mb-0" style="font-size:.85rem">
+    <thead>
+      <tr>
+        <th>Username</th>
+        <th>Last Login</th>
+        <th>IP Address</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in stats.recent_logins %}
+      <tr>
+        <td>{{ row.username }}</td>
+        <td class="text-muted">{{ row.last_login_at[:16].replace('T',' ') if row.last_login_at else '—' }}</td>
+        <td class="text-muted">{{ row.last_login_ip or '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

@@ -149,6 +149,45 @@ def ensure_db():
         app._db_ready = True
 
 
+# Endpoints that admins cannot access (redirect to admin panel)
+_USER_ONLY_ENDPOINTS = {
+    "dashboard", "topics", "topic_detail", "toggle_topic_favorite",
+    "set_topic_score", "set_topic_notes", "set_topic_status",
+    "export_topic_pdf", "export_topic_docx", "export_topics_csv",
+    "ingest_page", "ingest_sbir_gov", "ingest_sbir_topics",
+    "ingest_navy", "ingest_dod", "delete_ingest_log",
+    "analytics", "search",
+    "projects", "create_project", "project_detail", "edit_project",
+    "set_project_stage", "delete_project",
+    "upload_project_file", "download_project_file", "delete_project_file",
+    "toggle_checklist", "add_checklist_item", "delete_checklist_item",
+}
+
+# Endpoints that only admins can access
+_ADMIN_ONLY_ENDPOINTS = {
+    "admin_users", "admin_create_user", "admin_toggle_user",
+    "admin_delete_user", "admin_reset_password", "admin_unlock_user",
+    "admin_audit_log", "admin_audit_log_export",
+    "admin_db", "admin_db_backup", "admin_db_purge_topics",
+    "admin_settings", "admin_save_settings",
+}
+
+
+@app.before_request
+def enforce_role_routing():
+    """Redirect admins away from user pages and users away from admin pages."""
+    if not current_user.is_authenticated:
+        return None
+    endpoint = request.endpoint
+    if not endpoint:
+        return None
+    if current_user.is_admin and endpoint in _USER_ONLY_ENDPOINTS:
+        return redirect(url_for("admin_users"))
+    if not current_user.is_admin and endpoint in _ADMIN_ONLY_ENDPOINTS:
+        flash("Admin access required.", "danger")
+        return redirect(url_for("dashboard"))
+
+
 # ── Auth — Login / Logout / Setup ─────────────────────────────────────────────
 
 @app.route("/login", methods=["GET", "POST"])
@@ -157,23 +196,65 @@ def login():
     if db.count_users() == 0:
         return redirect(url_for("setup"))
     if current_user.is_authenticated:
-        return redirect(url_for("dashboard"))
+        dest = url_for("admin_users") if current_user.is_admin else url_for("dashboard")
+        return redirect(dest)
     if request.method == "POST":
-        username = request.form.get("username", "").strip()
-        password = request.form.get("password", "")
-        row = db.get_user_by_username(username)
-        if row and row["is_active"] and check_password_hash(row["password_hash"], password):
+        username  = request.form.get("username", "").strip()
+        password  = request.form.get("password", "")
+        ip        = request.remote_addr or "unknown"
+        row       = db.get_user_by_username(username)
+
+        if not row:
+            db.write_audit_log("LOGIN_FAILED", username=username,
+                               detail="Unknown user", ip_address=ip)
+            flash("Invalid username or password.", "danger")
+            return render_template("login.html")
+
+        if not row["is_active"]:
+            db.write_audit_log("LOGIN_FAILED", username=username, user_id=row["id"],
+                               detail="Account inactive", ip_address=ip)
+            flash("Your account has been deactivated. Contact an admin.", "danger")
+            return render_template("login.html")
+
+        if row.get("locked_at"):
+            db.write_audit_log("LOGIN_FAILED", username=username, user_id=row["id"],
+                               detail="Account locked", ip_address=ip)
+            flash("Account locked due to too many failed attempts. Contact an admin.", "danger")
+            return render_template("login.html")
+
+        if check_password_hash(row["password_hash"], password):
             user = User(row["id"], row["username"], row["email"],
                         row["role"], row["is_active"])
             login_user(user, remember=request.form.get("remember") == "1")
+            db.reset_failed_login(row["id"])
+            db.record_login(row["id"], ip)
+            db.write_audit_log("LOGIN_SUCCESS", username=username, user_id=row["id"],
+                               ip_address=ip)
+            # Admins land on the user management panel
+            if user.is_admin:
+                return redirect(url_for("admin_users"))
             return redirect(request.args.get("next") or url_for("dashboard"))
-        flash("Invalid username or password.", "danger")
+        else:
+            threshold = int(db.get_app_setting("lockout_threshold", "5"))
+            just_locked = db.increment_failed_login(row["id"], threshold)
+            if just_locked:
+                db.write_audit_log("ACCOUNT_LOCKED", username=username, user_id=row["id"],
+                                   detail=f"Locked after {threshold} failed attempts",
+                                   ip_address=ip)
+                flash("Too many failed attempts. Account has been locked — contact an admin.", "danger")
+            else:
+                db.write_audit_log("LOGIN_FAILED", username=username, user_id=row["id"],
+                                   detail="Invalid password", ip_address=ip)
+                flash("Invalid username or password.", "danger")
     return render_template("login.html")
 
 
 @app.route("/logout")
 @login_required
 def logout():
+    db.write_audit_log("LOGOUT", username=current_user.username,
+                       user_id=current_user.id,
+                       ip_address=request.remote_addr or "unknown")
     logout_user()
     flash("You have been logged out.", "info")
     return redirect(url_for("login"))
@@ -231,6 +312,10 @@ def admin_create_user():
         flash("Password must be at least 6 characters.", "danger")
     else:
         db.create_user(username, email, generate_password_hash(password), role)
+        db.write_audit_log("USER_CREATED",
+                           username=current_user.username, user_id=current_user.id,
+                           detail=f"Created user '{username}' with role '{role}'",
+                           ip_address=request.remote_addr)
         flash(f"User '{username}' created successfully.", "success")
     return redirect(url_for("admin_users"))
 
@@ -245,8 +330,30 @@ def admin_toggle_user(user_id):
     else:
         row = db.get_user_by_id(user_id)
         if row:
-            db.set_user_active(user_id, not row["is_active"])
-            flash(f"User '{row['username']}' {'activated' if not row['is_active'] else 'deactivated'}.", "success")
+            new_state = not row["is_active"]
+            db.set_user_active(user_id, new_state)
+            action = "USER_REACTIVATED" if new_state else "USER_DEACTIVATED"
+            db.write_audit_log(action,
+                               username=current_user.username, user_id=current_user.id,
+                               detail=f"{'Activated' if new_state else 'Deactivated'} user '{row['username']}'",
+                               ip_address=request.remote_addr)
+            flash(f"User '{row['username']}' {'activated' if new_state else 'deactivated'}.", "success")
+    return redirect(url_for("admin_users"))
+
+
+@app.route("/admin/users/<int:user_id>/unlock", methods=["POST"])
+@login_required
+def admin_unlock_user(user_id):
+    if not current_user.is_admin:
+        return redirect(url_for("dashboard"))
+    row = db.get_user_by_id(user_id)
+    if row:
+        db.unlock_user(user_id)
+        db.write_audit_log("ACCOUNT_UNLOCKED",
+                           username=current_user.username, user_id=current_user.id,
+                           detail=f"Unlocked account for '{row['username']}'",
+                           ip_address=request.remote_addr)
+        flash(f"Account for '{row['username']}' has been unlocked.", "success")
     return redirect(url_for("admin_users"))
 
 
@@ -260,6 +367,10 @@ def admin_delete_user(user_id):
     else:
         row = db.get_user_by_id(user_id)
         if row:
+            db.write_audit_log("USER_DELETED",
+                               username=current_user.username, user_id=current_user.id,
+                               detail=f"Deleted user '{row['username']}'",
+                               ip_address=request.remote_addr)
             db.delete_user(user_id)
             flash(f"User '{row['username']}' deleted.", "success")
     return redirect(url_for("admin_users"))
@@ -276,8 +387,129 @@ def admin_reset_password(user_id):
     else:
         db.update_user_password(user_id, generate_password_hash(new_password))
         row = db.get_user_by_id(user_id)
+        db.write_audit_log("USER_PASSWORD_RESET",
+                           username=current_user.username, user_id=current_user.id,
+                           detail=f"Reset password for '{row['username']}'",
+                           ip_address=request.remote_addr)
         flash(f"Password reset for '{row['username']}'.", "success")
     return redirect(url_for("admin_users"))
+
+
+# ── Admin — Audit Log ──────────────────────────────────────────────────────────
+
+@app.route("/admin/audit-log")
+@login_required
+def admin_audit_log():
+    if not current_user.is_admin:
+        return redirect(url_for("dashboard"))
+    page        = int(request.args.get("page", 1))
+    action_type = request.args.get("action_type", "")
+    username    = request.args.get("username", "")
+    per_page    = 50
+    result = db.get_audit_log(
+        page=page, per_page=per_page,
+        action_type=action_type or None,
+        username=username or None,
+    )
+    action_types = [
+        "LOGIN_SUCCESS", "LOGIN_FAILED", "LOGOUT",
+        "ACCOUNT_LOCKED", "ACCOUNT_UNLOCKED",
+        "USER_CREATED", "USER_DELETED", "USER_DEACTIVATED",
+        "USER_REACTIVATED", "USER_PASSWORD_RESET",
+        "INGEST_STARTED", "INGEST_COMPLETED", "INGEST_FAILED",
+    ]
+    return render_template("admin_audit_log.html",
+                           result=result, action_types=action_types,
+                           action_type=action_type, username=username)
+
+
+@app.route("/admin/audit-log/export")
+@login_required
+def admin_audit_log_export():
+    if not current_user.is_admin:
+        return redirect(url_for("dashboard"))
+    rows = db.get_audit_log_csv()
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["ID", "Timestamp", "Username", "User ID", "Action", "Detail", "IP Address"])
+    for r in rows:
+        writer.writerow([r["id"], r["timestamp"], r["username"], r["user_id"],
+                         r["action_type"], r["detail"], r["ip_address"]])
+    output.seek(0)
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=captureiq_audit_log.csv"},
+    )
+
+
+# ── Admin — Database & Backup ──────────────────────────────────────────────────
+
+@app.route("/admin/db")
+@login_required
+def admin_db():
+    if not current_user.is_admin:
+        return redirect(url_for("dashboard"))
+    stats = db.get_db_stats()
+    return render_template("admin_db.html", stats=stats)
+
+
+@app.route("/admin/db/backup")
+@login_required
+def admin_db_backup():
+    if not current_user.is_admin:
+        return redirect(url_for("dashboard"))
+    filename = f"captureiq_backup_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.db"
+    db.write_audit_log("DB_BACKUP",
+                       username=current_user.username, user_id=current_user.id,
+                       detail="Manual database backup downloaded",
+                       ip_address=request.remote_addr)
+    return send_file(db.DB_PATH, as_attachment=True, download_name=filename)
+
+
+# ── Admin — Settings ───────────────────────────────────────────────────────────
+
+@app.route("/admin/settings")
+@login_required
+def admin_settings():
+    if not current_user.is_admin:
+        return redirect(url_for("dashboard"))
+    settings = {
+        "lockout_threshold": db.get_app_setting("lockout_threshold", "5"),
+        "min_password_length": db.get_app_setting("min_password_length", "6"),
+    }
+    return render_template("admin_settings.html", settings=settings)
+
+
+@app.route("/admin/settings/save", methods=["POST"])
+@login_required
+def admin_save_settings():
+    if not current_user.is_admin:
+        return redirect(url_for("dashboard"))
+    lockout_threshold  = request.form.get("lockout_threshold", "5").strip()
+    min_password_length = request.form.get("min_password_length", "6").strip()
+    try:
+        lt = int(lockout_threshold)
+        if lt < 1:
+            raise ValueError
+    except ValueError:
+        flash("Lockout threshold must be a positive integer.", "danger")
+        return redirect(url_for("admin_settings"))
+    try:
+        mpl = int(min_password_length)
+        if mpl < 4:
+            raise ValueError
+    except ValueError:
+        flash("Minimum password length must be at least 4.", "danger")
+        return redirect(url_for("admin_settings"))
+    db.set_app_setting("lockout_threshold", str(lt))
+    db.set_app_setting("min_password_length", str(mpl))
+    db.write_audit_log("SETTINGS_CHANGED",
+                       username=current_user.username, user_id=current_user.id,
+                       detail=f"lockout_threshold={lt}, min_password_length={mpl}",
+                       ip_address=request.remote_addr)
+    flash("Settings saved.", "success")
+    return redirect(url_for("admin_settings"))
 
 
 # ── Dashboard ──────────────────────────────────────────────────────────────────
@@ -924,6 +1156,11 @@ def ingest_sbir_topics():
         "source": "sbir.gov/topics",
         "started": datetime.utcnow().isoformat(),
     }
+    _ingest_user = (current_user.username, current_user.id)
+    db.write_audit_log("INGEST_STARTED",
+                       username=_ingest_user[0], user_id=_ingest_user[1],
+                       detail=f"Source: sbir.gov/topics, max={max_rec}",
+                       ip_address=request.remote_addr)
 
     def run():
         from ingestors import sbir_gov_topics
@@ -940,8 +1177,14 @@ def ingest_sbir_topics():
                 "errors": result["errors"][:3],
                 "finished": datetime.utcnow().isoformat(),
             })
+            db.write_audit_log("INGEST_COMPLETED",
+                               username=_ingest_user[0], user_id=_ingest_user[1],
+                               detail=f"sbir.gov/topics: added={result['added']}, updated={result['updated']}")
         except Exception as e:
             _jobs[job_id].update({"status": "error", "error": str(e)})
+            db.write_audit_log("INGEST_FAILED",
+                               username=_ingest_user[0], user_id=_ingest_user[1],
+                               detail=f"sbir.gov/topics error: {e}")
 
     threading.Thread(target=run, daemon=True).start()
     flash(f"SBIR.gov topics ingestion started (job: {job_id}).", "info")

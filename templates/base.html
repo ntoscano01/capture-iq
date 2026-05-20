@@ -100,7 +100,46 @@
 <nav id="sidebar">
   <div class="brand">
     <i class="bi bi-rocket-takeoff-fill text-warning"></i> CaptureIQ
+    {% if current_user.is_authenticated and current_user.is_admin %}
+      <small>Admin Console</small>
+    {% endif %}
   </div>
+
+  {% if current_user.is_authenticated and current_user.is_admin %}
+  <!-- ── Admin Sidebar ─────────────────────────────────────────────── -->
+  <ul class="nav flex-column mt-2">
+    <li class="nav-section">User Management</li>
+    <li class="nav-item">
+      <a class="nav-link {% if request.endpoint == 'admin_users' %}active{% endif %}"
+         href="{{ url_for('admin_users') }}">
+        <i class="bi bi-people-fill"></i> Users
+      </a>
+    </li>
+    <li class="nav-section">Telemetry</li>
+    <li class="nav-item">
+      <a class="nav-link {% if request.endpoint == 'admin_audit_log' %}active{% endif %}"
+         href="{{ url_for('admin_audit_log') }}">
+        <i class="bi bi-journal-text"></i> Audit Log
+      </a>
+    </li>
+    <li class="nav-section">Database</li>
+    <li class="nav-item">
+      <a class="nav-link {% if request.endpoint == 'admin_db' %}active{% endif %}"
+         href="{{ url_for('admin_db') }}">
+        <i class="bi bi-database-fill"></i> DB Stats &amp; Backup
+      </a>
+    </li>
+    <li class="nav-section">Configuration</li>
+    <li class="nav-item">
+      <a class="nav-link {% if request.endpoint == 'admin_settings' %}active{% endif %}"
+         href="{{ url_for('admin_settings') }}">
+        <i class="bi bi-gear-fill"></i> App Settings
+      </a>
+    </li>
+  </ul>
+
+  {% else %}
+  <!-- ── Regular User Sidebar ──────────────────────────────────────── -->
   <ul class="nav flex-column mt-2">
     <li class="nav-item">
       <a class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}" href="{{ url_for('dashboard') }}">
@@ -114,7 +153,7 @@
       </a>
     </li>
     <li class="nav-item">
-      <a class="nav-link {% if request.endpoint == 'topics' and not request.args.get('favorited') %}active{% endif %}"
+      <a class="nav-link {% if request.endpoint == 'topics' and not request.args.get('favorited') and not request.args.get('topic_status') %}active{% endif %}"
          href="{{ url_for('topics') }}">
         <i class="bi bi-tags"></i> Topics
       </a>
@@ -152,7 +191,10 @@
       </a>
     </li>
   </ul>
+  {% endif %}
+
   <div class="mt-auto" style="border-top:1px solid rgba(255,255,255,.15)">
+    {% if not (current_user.is_authenticated and current_user.is_admin) %}
     <ul class="nav flex-column">
       <li class="nav-section" style="margin-top:.5rem">Settings</li>
       <li class="nav-item">
@@ -166,15 +208,8 @@
           {% endif %}
         </a>
       </li>
-      {% if current_user.is_authenticated and current_user.is_admin %}
-      <li class="nav-item">
-        <a class="nav-link {% if request.endpoint == 'admin_users' %}active{% endif %}"
-           href="{{ url_for('admin_users') }}">
-          <i class="bi bi-people-fill"></i> Users
-        </a>
-      </li>
-      {% endif %}
     </ul>
+    {% endif %}
     {% if current_user.is_authenticated %}
     <div style="padding:.6rem 1rem; border-top:1px solid rgba(255,255,255,.1); font-size:.78rem; color:rgba(255,255,255,.6)">
       <i class="bi bi-person-circle me-1"></i>

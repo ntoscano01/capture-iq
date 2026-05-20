@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}App Settings — CaptureIQ Admin{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <i class="bi bi-gear-fill text-primary fs-5"></i>
+  <h1>App Settings</h1>
+</div>
+
+<div class="row g-3">
+  <div class="col-md-7">
+    <div class="card" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07)">
+      <div class="card-header bg-white fw-semibold" style="font-size:.88rem">
+        <i class="bi bi-shield-lock text-danger me-1"></i> Security Settings
+      </div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('admin_save_settings') }}">
+
+          <!-- Lockout threshold -->
+          <div class="mb-4">
+            <label class="form-label fw-semibold" style="font-size:.88rem">
+              Account Lockout Threshold
+            </label>
+            <div class="input-group" style="max-width:180px">
+              <input type="number" name="lockout_threshold" class="form-control form-control-sm"
+                     value="{{ settings.lockout_threshold }}" min="1" max="99" required>
+              <span class="input-group-text" style="font-size:.82rem">attempts</span>
+            </div>
+            <div class="form-text mt-1">
+              Number of consecutive failed login attempts before an account is automatically locked.
+              A locked account must be manually unlocked by an admin from the Users page.
+            </div>
+          </div>
+
+          <!-- Minimum password length -->
+          <div class="mb-4">
+            <label class="form-label fw-semibold" style="font-size:.88rem">
+              Minimum Password Length
+            </label>
+            <div class="input-group" style="max-width:180px">
+              <input type="number" name="min_password_length" class="form-control form-control-sm"
+                     value="{{ settings.min_password_length }}" min="4" max="64" required>
+              <span class="input-group-text" style="font-size:.82rem">characters</span>
+            </div>
+            <div class="form-text mt-1">
+              Minimum number of characters required when creating or resetting a password.
+              Minimum allowed value is 4.
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-primary btn-sm">
+            <i class="bi bi-check-circle me-1"></i> Save Settings
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reference card -->
+  <div class="col-md-5">
+    <div class="card" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07); border-left:3px solid #c8972b">
+      <div class="card-body">
+        <h6 class="fw-semibold mb-3" style="font-size:.88rem; color:#664d03">
+          <i class="bi bi-info-circle me-1"></i> Setting Reference
+        </h6>
+        <p style="font-size:.83rem; color:#495057">
+          <strong>Lockout Threshold:</strong> Industry standard is 5 attempts.
+          Lower values (3) are stricter and better for sensitive data.
+          Higher values (10) reduce accidental lockouts for users who mistype frequently.
+        </p>
+        <p style="font-size:.83rem; color:#495057 ; margin-bottom:0">
+          <strong>Password Length:</strong> 8+ characters is recommended for most deployments.
+          The current minimum of {{ settings.min_password_length }} characters applies to new
+          accounts and password resets — existing passwords are not affected until reset.
+        </p>
+      </div>
+    </div>
+
+    <div class="card mt-3" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07)">
+      <div class="card-body">
+        <h6 class="fw-semibold mb-2" style="font-size:.88rem">Quick Links</h6>
+        <ul class="list-unstyled mb-0" style="font-size:.85rem">
+          <li class="mb-1">
+            <a href="{{ url_for('admin_users') }}">
+              <i class="bi bi-people me-1"></i> Manage Users
+            </a>
+          </li>
+          <li class="mb-1">
+            <a href="{{ url_for('admin_audit_log') }}">
+              <i class="bi bi-journal-text me-1"></i> Audit Log
+            </a>
+          </li>
+          <li>
+            <a href="{{ url_for('admin_db') }}">
+              <i class="bi bi-database me-1"></i> DB Stats &amp; Backup
+            </a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

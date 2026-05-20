@@ -189,6 +189,27 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_utp_user ON user_topic_prefs(user_id);
             CREATE INDEX IF NOT EXISTS idx_utp_topic ON user_topic_prefs(topic_id);
 
+            -- ── Audit log ────────────────────────────────────────────────────
+            CREATE TABLE IF NOT EXISTS audit_log (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp   TEXT DEFAULT (datetime('now')),
+                user_id     INTEGER,
+                username    TEXT,
+                action_type TEXT NOT NULL,
+                detail      TEXT,
+                ip_address  TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_log(timestamp);
+            CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id);
+            CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action_type);
+
+            -- ── App settings (key-value store) ───────────────────────────────
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key   TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_projects_topic ON projects(topic_id);
             CREATE INDEX IF NOT EXISTS idx_projects_stage ON projects(stage);
             CREATE INDEX IF NOT EXISTS idx_pfiles_project ON project_files(project_id);
@@ -197,6 +218,19 @@ def init_db():
         """)
 
     # ── Migration: add new columns to existing databases ──────────────────────
+    new_user_cols = [
+        ("last_login_at",           "TEXT"),
+        ("last_login_ip",           "TEXT"),
+        ("failed_login_attempts",   "INTEGER DEFAULT 0"),
+        ("locked_at",               "TEXT"),
+    ]
+    with get_db() as conn:
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(users)")}
+        for col, col_type in new_user_cols:
+            if col not in existing:
+                conn.execute(f"ALTER TABLE users ADD COLUMN {col} {col_type}")
+                print(f"[DB] Migrated: added users.{col}")
+
     new_topic_cols = [
         ("objective",            "TEXT"),
         ("phase1_desc",          "TEXT"),
@@ -1027,14 +1061,22 @@ def get_user_by_id(user_id: int) -> dict | None:
 
 def get_user_by_username(username: str) -> dict | None:
     with get_db() as conn:
-        row = conn.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
+        row = conn.execute(
+            """SELECT *, COALESCE(failed_login_attempts, 0) as failed_login_attempts
+               FROM users WHERE username=?""",
+            (username,)
+        ).fetchone()
     return dict(row) if row else None
 
 
 def get_all_users() -> list:
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT id, username, email, role, is_active, created_at FROM users ORDER BY id"
+            """SELECT id, username, email, role, is_active, created_at,
+                      last_login_at, last_login_ip,
+                      COALESCE(failed_login_attempts, 0) as failed_login_attempts,
+                      locked_at
+               FROM users ORDER BY id"""
         ).fetchall()
     return [dict(r) for r in rows]
 
@@ -1245,6 +1287,178 @@ def get_analytics_data() -> dict:
         "status_agencies": status_agencies,
         "status_data":     status_data,
     }
+
+
+# ── Audit Log ──────────────────────────────────────────────────────────────────
+
+def write_audit_log(action_type: str, username: str = None, user_id: int = None,
+                    detail: str = None, ip_address: str = None):
+    """Write a single audit log entry."""
+    with get_db() as conn:
+        conn.execute(
+            """INSERT INTO audit_log (action_type, username, user_id, detail, ip_address)
+               VALUES (?,?,?,?,?)""",
+            (action_type, username, user_id, detail, ip_address)
+        )
+
+
+def get_audit_log(page: int = 1, per_page: int = 100,
+                  action_type: str = None, username: str = None) -> dict:
+    """Return paginated audit log entries, optionally filtered."""
+    sql    = "SELECT * FROM audit_log WHERE 1=1"
+    c_sql  = "SELECT COUNT(*) FROM audit_log WHERE 1=1"
+    params = []
+    if action_type:
+        sql   += " AND action_type = ?"
+        c_sql += " AND action_type = ?"
+        params.append(action_type)
+    if username:
+        sql   += " AND username LIKE ?"
+        c_sql += " AND username LIKE ?"
+        params.append(f"%{username}%")
+    sql += " ORDER BY id DESC LIMIT ? OFFSET ?"
+    offset = (page - 1) * per_page
+    with get_db() as conn:
+        total = conn.execute(c_sql, params).fetchone()[0]
+        rows  = conn.execute(sql, params + [per_page, offset]).fetchall()
+    return {
+        "rows":      [dict(r) for r in rows],
+        "total":     total,
+        "page":      page,
+        "per_page":  per_page,
+        "pages":     max(1, (total + per_page - 1) // per_page),
+    }
+
+
+def get_audit_log_csv() -> list:
+    """Return all audit log rows for CSV export."""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM audit_log ORDER BY id DESC"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+# ── App Settings ───────────────────────────────────────────────────────────────
+
+def get_app_setting(key: str, default: str = None) -> str | None:
+    with get_db() as conn:
+        row = conn.execute("SELECT value FROM app_settings WHERE key=?", (key,)).fetchone()
+    return row[0] if row else default
+
+
+def set_app_setting(key: str, value: str):
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO app_settings (key, value) VALUES (?,?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (key, value)
+        )
+
+
+# ── Account Lockout ────────────────────────────────────────────────────────────
+
+def increment_failed_login(user_id: int, lockout_threshold: int) -> bool:
+    """Increment failed login counter. Locks account if threshold reached.
+    Returns True if the account was just locked."""
+    now = datetime.utcnow().isoformat()
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE users SET failed_login_attempts = COALESCE(failed_login_attempts,0)+1 WHERE id=?",
+            (user_id,)
+        )
+        row = conn.execute(
+            "SELECT failed_login_attempts FROM users WHERE id=?", (user_id,)
+        ).fetchone()
+        attempts = row[0] if row else 0
+        if attempts >= lockout_threshold:
+            conn.execute(
+                "UPDATE users SET locked_at=? WHERE id=? AND locked_at IS NULL",
+                (now, user_id)
+            )
+            # Check if we just set it
+            locked = conn.execute(
+                "SELECT locked_at FROM users WHERE id=?", (user_id,)
+            ).fetchone()
+            return locked and locked[0] == now
+    return False
+
+
+def reset_failed_login(user_id: int):
+    """Reset failed login counter after successful login."""
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE users SET failed_login_attempts=0, locked_at=NULL WHERE id=?",
+            (user_id,)
+        )
+
+
+def unlock_user(user_id: int):
+    """Admin action: clear lockout and reset failed counter."""
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE users SET failed_login_attempts=0, locked_at=NULL WHERE id=?",
+            (user_id,)
+        )
+
+
+def record_login(user_id: int, ip_address: str):
+    """Update last_login_at and last_login_ip on successful login."""
+    now = datetime.utcnow().isoformat()
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE users SET last_login_at=?, last_login_ip=? WHERE id=?",
+            (now, ip_address, user_id)
+        )
+
+
+# ── DB Stats (for admin panel) ─────────────────────────────────────────────────
+
+def get_db_stats() -> dict:
+    """Return high-level database statistics for the admin panel."""
+    stats = {}
+    # File size
+    try:
+        stats["db_size_bytes"] = os.path.getsize(DB_PATH)
+        stats["db_size_mb"]    = round(stats["db_size_bytes"] / (1024 * 1024), 2)
+    except Exception:
+        stats["db_size_bytes"] = 0
+        stats["db_size_mb"]    = 0
+
+    with get_db() as conn:
+        stats["topic_count"]   = conn.execute("SELECT COUNT(*) FROM topics").fetchone()[0]
+        stats["user_count"]    = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        stats["project_count"] = conn.execute("SELECT COUNT(*) FROM projects").fetchone()[0]
+        stats["audit_count"]   = conn.execute("SELECT COUNT(*) FROM audit_log").fetchone()[0]
+        stats["active_users"]  = conn.execute(
+            "SELECT COUNT(*) FROM users WHERE is_active=1").fetchone()[0]
+        stats["locked_users"]  = conn.execute(
+            "SELECT COUNT(*) FROM users WHERE locked_at IS NOT NULL").fetchone()[0]
+
+        last_ingest = conn.execute(
+            "SELECT source, finished_at FROM ingest_log ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        stats["last_ingest_source"] = last_ingest[0] if last_ingest else None
+        stats["last_ingest_at"]     = last_ingest[1] if last_ingest else None
+
+        stats["ingest_log_count"] = conn.execute(
+            "SELECT COUNT(*) FROM ingest_log").fetchone()[0]
+
+        # Recent logins
+        stats["recent_logins"] = [dict(r) for r in conn.execute(
+            """SELECT username, last_login_at, last_login_ip
+               FROM users WHERE last_login_at IS NOT NULL
+               ORDER BY last_login_at DESC LIMIT 5"""
+        ).fetchall()]
+
+        # Login failure count in last 24 hours
+        stats["failed_logins_24h"] = conn.execute(
+            """SELECT COUNT(*) FROM audit_log
+               WHERE action_type='LOGIN_FAILED'
+               AND timestamp >= datetime('now','-1 day')"""
+        ).fetchone()[0]
+
+    return stats
 
 
 def get_distinct(table: str, column: str) -> list:

@@ -11,15 +11,17 @@
 <div class="row g-3">
 
   <!-- User list -->
-  <div class="col-md-8">
+  <div class="col-12">
     <div class="table-card">
-      <table class="table table-hover align-middle mb-0">
+      <table class="table table-hover align-middle mb-0" style="font-size:.86rem">
         <thead>
           <tr>
             <th>Username</th>
             <th>Email</th>
             <th>Role</th>
             <th>Status</th>
+            <th>Last Login</th>
+            <th>Failed</th>
             <th>Created</th>
             <th></th>
           </tr>
@@ -31,10 +33,15 @@
               <i class="bi bi-person-circle me-1 text-muted"></i>
               <strong>{{ u.username }}</strong>
               {% if u.id == current_user.id %}
-                <span class="badge bg-info ms-1" style="font-size:.65rem">You</span>
+                <span class="badge bg-info ms-1" style="font-size:.6rem">You</span>
+              {% endif %}
+              {% if u.locked_at %}
+                <span class="badge bg-danger ms-1" style="font-size:.6rem">
+                  <i class="bi bi-lock-fill"></i> Locked
+                </span>
               {% endif %}
             </td>
-            <td class="text-muted" style="font-size:.85rem">{{ u.email or '—' }}</td>
+            <td class="text-muted">{{ u.email or '—' }}</td>
             <td>
               {% if u.role == 'admin' %}
                 <span class="badge bg-danger">Admin</span>
@@ -43,17 +50,46 @@
               {% endif %}
             </td>
             <td>
-              {% if u.is_active %}
-                <span class="badge bg-success">Active</span>
-              {% else %}
+              {% if not u.is_active %}
                 <span class="badge bg-secondary">Inactive</span>
+              {% elif u.locked_at %}
+                <span class="badge bg-danger">Locked</span>
+              {% else %}
+                <span class="badge bg-success">Active</span>
               {% endif %}
             </td>
-            <td class="text-muted" style="font-size:.82rem">{{ u.created_at[:10] if u.created_at else '—' }}</td>
+            <td class="text-muted" style="font-size:.8rem">
+              {% if u.last_login_at %}
+                {{ u.last_login_at[:16].replace('T',' ') }}
+                {% if u.last_login_ip %}
+                  <br><span style="font-size:.75rem; color:#adb5bd">{{ u.last_login_ip }}</span>
+                {% endif %}
+              {% else %}
+                <span class="text-muted">Never</span>
+              {% endif %}
+            </td>
+            <td class="text-center">
+              {% if u.failed_login_attempts > 0 %}
+                <span class="badge {{ 'bg-danger' if u.locked_at else 'bg-warning text-dark' }}">
+                  {{ u.failed_login_attempts }}
+                </span>
+              {% else %}
+                <span class="text-muted">0</span>
+              {% endif %}
+            </td>
+            <td class="text-muted" style="font-size:.8rem">{{ u.created_at[:10] if u.created_at else '—' }}</td>
             <td class="text-end" style="white-space:nowrap">
               {% if u.id != current_user.id %}
+              <!-- Unlock if locked -->
+              {% if u.locked_at %}
+              <form method="post" action="{{ url_for('admin_unlock_user', user_id=u.id) }}" class="d-inline">
+                <button type="submit" class="btn btn-sm btn-warning py-0" title="Unlock account">
+                  <i class="bi bi-unlock-fill"></i>
+                </button>
+              </form>
+              {% endif %}
               <!-- Activate / Deactivate -->
-              <form method="post" action="{{ url_for('admin_toggle_user', user_id=u.id) }}" class="d-inline">
+              <form method="post" action="{{ url_for('admin_toggle_user', user_id=u.id) }}" class="d-inline ms-1">
                 <button type="submit" class="btn btn-sm {{ 'btn-outline-warning' if u.is_active else 'btn-outline-success' }} py-0"
                         title="{{ 'Deactivate' if u.is_active else 'Activate' }}">
                   <i class="bi {{ 'bi-pause-circle' if u.is_active else 'bi-play-circle' }}"></i>
@@ -105,7 +141,7 @@
   </div>
 
   <!-- Create user form -->
-  <div class="col-md-4">
+  <div class="col-md-5">
     <div class="card border-primary">
       <div class="card-header bg-primary text-white fw-semibold">
         <i class="bi bi-person-plus-fill"></i> Add New User
@@ -140,15 +176,25 @@
         </form>
       </div>
     </div>
+  </div>
 
-    <div class="card mt-3">
+  <!-- Info card -->
+  <div class="col-md-4">
+    <div class="card">
       <div class="card-body" style="font-size:.82rem">
-        <p class="fw-semibold mb-1"><i class="bi bi-info-circle text-primary"></i> Access Levels</p>
-        <p class="text-muted mb-1"><span class="badge bg-danger">Admin</span> — Full access including user management and all data.</p>
-        <p class="text-muted mb-0"><span class="badge bg-secondary">User</span> — Access to topics, projects, and ingestion. Cannot manage users.</p>
+        <p class="fw-semibold mb-2"><i class="bi bi-info-circle text-primary"></i> Access Levels</p>
+        <p class="text-muted mb-1"><span class="badge bg-danger">Admin</span> — User management, audit log, DB backup, app settings. No access to pipeline data.</p>
+        <p class="text-muted mb-3"><span class="badge bg-secondary">User</span> — Full access to topics, projects, ingestion, and analytics.</p>
+        <p class="fw-semibold mb-2"><i class="bi bi-lock text-danger"></i> Account Lockout</p>
+        <p class="text-muted mb-0">
+          Accounts are locked automatically after too many failed login attempts
+          (configurable in <a href="{{ url_for('admin_settings') }}">App Settings</a>).
+          Use the <i class="bi bi-unlock-fill text-warning"></i> button to unlock a locked account.
+        </p>
       </div>
     </div>
   </div>
+
 
 </div>
 {% endblock %}
