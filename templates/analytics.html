@@ -133,7 +133,7 @@
   <div class="col-12">
     <div class="card" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07)">
       <div class="card-header bg-white fw-semibold" style="font-size:.88rem">
-        <i class="bi bi-hand-thumbs-up-fill text-success me-1"></i> Nominated &amp; Passed Topics by Agency
+        <i class="bi bi-hand-thumbs-up-fill text-success me-1"></i> Interested &amp; Not Interested Topics by Agency
       </div>
       <div class="card-body">
         <canvas id="statusChart" height="100"></canvas>
@@ -314,13 +314,13 @@ if (document.getElementById('statusChart') && statusAgs.length > 0) {
       labels: statusAgs,
       datasets: [
         {
-          label: 'Nominated',
+          label: 'Interested',
           data: statusAgs.map(ag => (statusData.nominated || {})[ag] || 0),
           backgroundColor: '#1dd1a1',
           borderRadius: 4,
         },
         {
-          label: 'Passed',
+          label: 'Not Interested',
           data: statusAgs.map(ag => (statusData.passed || {})[ag] || 0),
           backgroundColor: '#eb4d4b',
           borderRadius: 4,

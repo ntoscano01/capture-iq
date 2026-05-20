@@ -1043,9 +1043,9 @@ def export_topics_csv():
     for row in rows:
         status_label = ""
         if row["topic_status"] == "nominated":
-            status_label = "Nominated"
+            status_label = "Interested"
         elif row["topic_status"] == "passed":
-            status_label = "Passed"
+            status_label = "Not Interested"
 
         writer.writerow([
             row["topic_number"] or "",

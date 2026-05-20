@@ -33,7 +33,7 @@
          onclick="location.href='{{ url_for('topics', topic_status='nominated') }}'">
       <div class="card-body text-center">
         <div class="stat-number" style="color:#1aab6d">{{ stats.nominated_count }}</div>
-        <div class="stat-label">Nominated</div>
+        <div class="stat-label">Interested</div>
       </div>
     </div>
   </div>
@@ -42,7 +42,7 @@
          onclick="location.href='{{ url_for('topics', topic_status='passed') }}'">
       <div class="card-body text-center">
         <div class="stat-number text-danger">{{ stats.passed_count }}</div>
-        <div class="stat-label">Passed</div>
+        <div class="stat-label">Not Interested</div>
       </div>
     </div>
   </div>
