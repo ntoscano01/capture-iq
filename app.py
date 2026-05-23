@@ -257,7 +257,8 @@ _ADMIN_ONLY_ENDPOINTS = {
     "admin_delete_user", "admin_reset_password", "admin_unlock_user",
     "admin_audit_log", "admin_audit_log_export",
     "admin_db", "admin_db_backup", "admin_db_purge_topics",
-    "admin_settings", "admin_save_settings",
+    "admin_settings", "admin_save_settings", "admin_save_smtp",
+    "admin_pending_registrations", "admin_approve_registration", "admin_reject_registration",
 }
 
 
@@ -335,6 +336,239 @@ def login():
                                    detail="Invalid password", ip_address=ip)
                 flash("Invalid username or password.", "danger")
     return render_template("login.html")
+
+
+@app.route("/forgot-username", methods=["POST"])
+def forgot_username():
+    """Look up username by email address and display it on-screen."""
+    email = request.form.get("email", "").strip()
+    if not email:
+        flash("Please enter your email address.", "warning")
+        return redirect(url_for("login"))
+
+    user = db.get_user_by_email(email)
+    ip   = request.remote_addr or "unknown"
+    if user:
+        db.write_audit_log("FORGOT_USERNAME", username=user["username"],
+                           user_id=user["id"], detail="Username lookup by email",
+                           ip_address=ip)
+        flash(f"Your username is: <strong>{user['username']}</strong>", "info")
+    else:
+        # Don't reveal whether email exists — same message either way
+        flash("If that email is registered, your username has been displayed above.", "info")
+
+    return redirect(url_for("login"))
+
+
+@app.route("/forgot-password", methods=["POST"])
+def forgot_password():
+    """Generate a reset token and email it to the user."""
+    email = request.form.get("email", "").strip()
+    ip    = request.remote_addr or "unknown"
+
+    if not email:
+        flash("Please enter your email address.", "warning")
+        return redirect(url_for("login"))
+
+    user = db.get_user_by_email(email)
+    if user and user["is_active"]:
+        token = db.create_password_reset_token(user["id"], hours_valid=2)
+        reset_url = url_for("reset_password", token=token, _external=True)
+
+        subject   = "CaptureIQ — Password Reset Request"
+        body_text = (
+            f"Hi {user['username']},\n\n"
+            f"A password reset was requested for your CaptureIQ account.\n\n"
+            f"Click the link below to reset your password (valid for 2 hours):\n"
+            f"{reset_url}\n\n"
+            f"If you did not request this, you can safely ignore this email.\n\n"
+            f"— CaptureIQ"
+        )
+        body_html = f"""
+        <div style="font-family:system-ui,sans-serif;max-width:480px;margin:0 auto">
+          <div style="background:#003087;color:#fff;padding:1.5rem;border-radius:8px 8px 0 0;text-align:center">
+            <h2 style="margin:0">🔑 Password Reset</h2>
+            <p style="margin:.5rem 0 0;opacity:.8">CaptureIQ</p>
+          </div>
+          <div style="background:#fff;padding:2rem;border:1px solid #dee2e6;border-top:none;border-radius:0 0 8px 8px">
+            <p>Hi <strong>{user['username']}</strong>,</p>
+            <p>A password reset was requested for your account. Click the button below to choose a new password.</p>
+            <p style="text-align:center;margin:2rem 0">
+              <a href="{reset_url}"
+                 style="background:#003087;color:#fff;padding:.75rem 2rem;border-radius:6px;
+                        text-decoration:none;font-weight:600;display:inline-block">
+                Reset My Password
+              </a>
+            </p>
+            <p style="color:#6c757d;font-size:.85rem">
+              This link expires in <strong>2 hours</strong>. If you did not request a reset, ignore this email.
+            </p>
+          </div>
+        </div>
+        """
+
+        ok, err = db.send_email(email, subject, body_text, body_html)
+        db.write_audit_log("PASSWORD_RESET_REQUESTED", username=user["username"],
+                           user_id=user["id"],
+                           detail=f"Reset email {'sent' if ok else 'failed: ' + err}",
+                           ip_address=ip)
+
+        if not ok:
+            # Email not configured — show token info to admin in flash for local installs
+            smtp_host = db.get_app_setting("smtp_host", "")
+            if not smtp_host:
+                flash(
+                    f"Email is not configured. An admin can reset the password manually using "
+                    f"<code>python3 reset_password.py</code>, or configure SMTP in App Settings.",
+                    "warning"
+                )
+            else:
+                flash("Failed to send reset email. Contact your administrator.", "danger")
+            return redirect(url_for("login"))
+
+    # Always show the same message whether email matched or not
+    flash("If that email address is registered, a password reset link has been sent. Check your inbox.", "info")
+    return redirect(url_for("login"))
+
+
+@app.route("/reset-password/<token>", methods=["GET", "POST"])
+def reset_password(token: str):
+    """Validate token and allow user to set a new password."""
+    row = db.get_valid_reset_token(token)
+    if not row:
+        flash("This password reset link is invalid or has expired. Please request a new one.", "danger")
+        return redirect(url_for("login"))
+
+    if request.method == "POST":
+        password  = request.form.get("password", "")
+        confirm   = request.form.get("confirm", "")
+        min_len   = int(db.get_app_setting("min_password_length", "8"))
+
+        if len(password) < min_len:
+            flash(f"Password must be at least {min_len} characters.", "warning")
+            return render_template("reset_password.html", token=token, username=row["username"])
+        if password != confirm:
+            flash("Passwords do not match.", "warning")
+            return render_template("reset_password.html", token=token, username=row["username"])
+
+        from werkzeug.security import generate_password_hash
+        new_hash = generate_password_hash(password)
+        ok = db.consume_reset_token(token, new_hash)
+        if ok:
+            db.write_audit_log("PASSWORD_RESET_COMPLETED", username=row["username"],
+                               user_id=row["user_id"],
+                               ip_address=request.remote_addr or "unknown")
+            flash("Your password has been reset. Please sign in.", "success")
+        else:
+            flash("Reset link expired. Please request a new one.", "danger")
+        return redirect(url_for("login"))
+
+    return render_template("reset_password.html", token=token, username=row["username"])
+
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    """Self-service account registration. Requires admin approval if that setting is on."""
+    if current_user.is_authenticated:
+        return redirect(url_for("dashboard"))
+    if db.count_users() == 0:
+        return redirect(url_for("setup"))
+
+    # Check if registration is enabled
+    allow_reg = db.get_app_setting("allow_registration", "true").lower() == "true"
+    if not allow_reg:
+        flash("Self-registration is currently disabled. Contact an administrator.", "warning")
+        return redirect(url_for("login"))
+
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        email    = request.form.get("email", "").strip()
+        password = request.form.get("password", "")
+        confirm  = request.form.get("confirm", "")
+        ip       = request.remote_addr or "unknown"
+        min_len  = int(db.get_app_setting("min_password_length", "8"))
+
+        error = None
+        if not username or not password:
+            error = "Username and password are required."
+        elif len(username) < 3:
+            error = "Username must be at least 3 characters."
+        elif db.get_user_by_username(username):
+            error = f"Username '{username}' is already taken."
+        elif email and db.get_user_by_email(email):
+            error = "An account with that email already exists."
+        elif len(password) < min_len:
+            error = f"Password must be at least {min_len} characters."
+        elif password != confirm:
+            error = "Passwords do not match."
+
+        if error:
+            flash(error, "danger")
+            return render_template("register.html", username=username, email=email)
+
+        needs_approval = db.get_app_setting("registration_approval", "false").lower() == "true"
+        if needs_approval:
+            # Create account as inactive — admin must approve
+            db.create_user(username, email, generate_password_hash(password),
+                           role="user", is_active=0)
+            db.write_audit_log("REGISTRATION_PENDING", username=username,
+                               detail="Self-registration pending admin approval",
+                               ip_address=ip)
+            flash("Your account request has been submitted. An administrator will review and activate it shortly.", "info")
+        else:
+            db.create_user(username, email, generate_password_hash(password), role="user")
+            db.write_audit_log("REGISTRATION_COMPLETED", username=username,
+                               detail="Self-registration completed (auto-approved)",
+                               ip_address=ip)
+            flash("Account created! You can now sign in.", "success")
+
+        return redirect(url_for("login"))
+
+    return render_template("register.html", username="", email="")
+
+
+@app.route("/admin/registrations")
+@login_required
+def admin_pending_registrations():
+    """List inactive users who registered and are awaiting approval."""
+    if not current_user.is_admin:
+        return redirect(url_for("admin_users"))
+    pending = [u for u in db.get_all_users() if not u["is_active"] and u["role"] == "user"]
+    return render_template("admin_users.html",
+                           users=db.get_all_users(),
+                           pending_registrations=pending)
+
+
+@app.route("/admin/users/<int:user_id>/approve", methods=["POST"])
+@login_required
+def admin_approve_registration(user_id: int):
+    if not current_user.is_admin:
+        abort(403)
+    with db.get_db() as conn:
+        conn.execute("UPDATE users SET is_active=1 WHERE id=?", (user_id,))
+    u = db.get_user_by_id(user_id)
+    db.write_audit_log("USER_APPROVED", username=current_user.username,
+                       user_id=current_user.id,
+                       detail=f"Approved registration for '{u['username'] if u else user_id}'",
+                       ip_address=request.remote_addr)
+    flash("Account approved and activated.", "success")
+    return redirect(url_for("admin_users"))
+
+
+@app.route("/admin/users/<int:user_id>/reject", methods=["POST"])
+@login_required
+def admin_reject_registration(user_id: int):
+    if not current_user.is_admin:
+        abort(403)
+    u = db.get_user_by_id(user_id)
+    db.write_audit_log("USER_REJECTED", username=current_user.username,
+                       user_id=current_user.id,
+                       detail=f"Rejected registration for '{u['username'] if u else user_id}'",
+                       ip_address=request.remote_addr)
+    with db.get_db() as conn:
+        conn.execute("DELETE FROM users WHERE id=? AND is_active=0", (user_id,))
+    flash("Registration request rejected and removed.", "info")
+    return redirect(url_for("admin_users"))
 
 
 @app.route("/logout")
@@ -708,8 +942,18 @@ def admin_settings():
     if not current_user.is_admin:
         return redirect(url_for("dashboard"))
     settings = {
-        "lockout_threshold": db.get_app_setting("lockout_threshold", "5"),
-        "min_password_length": db.get_app_setting("min_password_length", "6"),
+        "lockout_threshold":    db.get_app_setting("lockout_threshold", "5"),
+        "min_password_length":  db.get_app_setting("min_password_length", "8"),
+        "allow_registration":   db.get_app_setting("allow_registration", "true"),
+        "registration_approval": db.get_app_setting("registration_approval", "false"),
+        "smtp_host":     db.get_app_setting("smtp_host", ""),
+        "smtp_port":     db.get_app_setting("smtp_port", "587"),
+        "smtp_user":     db.get_app_setting("smtp_user", ""),
+        "smtp_password": db.get_app_setting("smtp_password", ""),
+        "smtp_from":     db.get_app_setting("smtp_from", ""),
+        "smtp_tls":      db.get_app_setting("smtp_tls", "true"),
+        "smtp_test_result": None,
+        "smtp_test_ok": False,
     }
     return render_template("admin_settings.html", settings=settings)
 
@@ -735,14 +979,75 @@ def admin_save_settings():
     except ValueError:
         flash("Minimum password length must be at least 4.", "danger")
         return redirect(url_for("admin_settings"))
+    allow_reg  = "true" if request.form.get("allow_registration") else "false"
+    req_approval = "true" if request.form.get("registration_approval") else "false"
     db.set_app_setting("lockout_threshold", str(lt))
     db.set_app_setting("min_password_length", str(mpl))
+    db.set_app_setting("allow_registration", allow_reg)
+    db.set_app_setting("registration_approval", req_approval)
     db.write_audit_log("SETTINGS_CHANGED",
                        username=current_user.username, user_id=current_user.id,
-                       detail=f"lockout_threshold={lt}, min_password_length={mpl}",
+                       detail=f"lockout_threshold={lt}, min_password_length={mpl}, "
+                              f"allow_registration={allow_reg}, registration_approval={req_approval}",
                        ip_address=request.remote_addr)
     flash("Settings saved.", "success")
     return redirect(url_for("admin_settings"))
+
+
+@app.route("/admin/settings/smtp", methods=["POST"])
+@login_required
+def admin_save_smtp():
+    if not current_user.is_admin:
+        return redirect(url_for("dashboard"))
+
+    smtp_host = request.form.get("smtp_host", "").strip()
+    smtp_port = request.form.get("smtp_port", "587").strip() or "587"
+    smtp_user = request.form.get("smtp_user", "").strip()
+    smtp_pass = request.form.get("smtp_password", "").strip()
+    smtp_from = request.form.get("smtp_from", "").strip()
+    smtp_tls  = "true" if request.form.get("smtp_tls") else "false"
+
+    db.set_app_setting("smtp_host", smtp_host)
+    db.set_app_setting("smtp_port", smtp_port)
+    db.set_app_setting("smtp_user", smtp_user)
+    if smtp_pass:  # Only update password if a new one was entered
+        db.set_app_setting("smtp_password", smtp_pass)
+    db.set_app_setting("smtp_from", smtp_from)
+    db.set_app_setting("smtp_tls", smtp_tls)
+
+    send_test = request.form.get("send_test")
+    test_result = None
+    test_ok     = False
+
+    if send_test and smtp_host and smtp_user:
+        test_to = smtp_from or smtp_user
+        ok, err = db.send_email(
+            test_to,
+            "CaptureIQ — SMTP Test",
+            "This is a test email from CaptureIQ to confirm your SMTP settings are working.",
+        )
+        test_ok     = ok
+        test_result = f"Test email sent to {test_to}." if ok else f"Failed: {err}"
+        db.write_audit_log("SMTP_TEST", username=current_user.username,
+                           user_id=current_user.id,
+                           detail=f"SMTP test {'OK' if ok else 'FAILED: ' + err}",
+                           ip_address=request.remote_addr)
+    else:
+        flash("Email settings saved.", "success")
+
+    settings = {
+        "lockout_threshold":  db.get_app_setting("lockout_threshold", "5"),
+        "min_password_length": db.get_app_setting("min_password_length", "6"),
+        "smtp_host":     smtp_host,
+        "smtp_port":     smtp_port,
+        "smtp_user":     smtp_user,
+        "smtp_password": db.get_app_setting("smtp_password", ""),
+        "smtp_from":     smtp_from,
+        "smtp_tls":      smtp_tls,
+        "smtp_test_result": test_result,
+        "smtp_test_ok":     test_ok,
+    }
+    return render_template("admin_settings.html", settings=settings)
 
 
 @app.route("/help/user-guide")

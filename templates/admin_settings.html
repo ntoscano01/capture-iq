@@ -48,9 +48,115 @@
             </div>
           </div>
 
+          <!-- Registration settings -->
+          <hr class="my-3">
+          <div class="mb-3">
+            <label class="form-label fw-semibold" style="font-size:.88rem">Self-Registration</label>
+            <div class="form-check form-switch mb-1">
+              <input class="form-check-input" type="checkbox" name="allow_registration"
+                     id="allowReg" value="true"
+                     {{ 'checked' if settings.allow_registration == 'true' }}>
+              <label class="form-check-label" for="allowReg" style="font-size:.85rem">
+                Allow users to create their own accounts
+              </label>
+            </div>
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" name="registration_approval"
+                     id="reqApproval" value="true"
+                     {{ 'checked' if settings.registration_approval == 'true' }}>
+              <label class="form-check-label" for="reqApproval" style="font-size:.85rem">
+                Require admin approval before new accounts can sign in
+              </label>
+            </div>
+            <div class="form-text mt-1">
+              When approval is required, new registrations appear as inactive on the
+              <a href="{{ url_for('admin_users') }}">Users page</a> until an admin activates them.
+            </div>
+          </div>
+
           <button type="submit" class="btn btn-primary btn-sm">
             <i class="bi bi-check-circle me-1"></i> Save Settings
           </button>
+        </form>
+      </div>
+    </div>
+
+    <!-- SMTP / Email Settings -->
+    <div class="card mt-3" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07)">
+      <div class="card-header bg-white fw-semibold" style="font-size:.88rem">
+        <i class="bi bi-envelope-fill text-primary me-1"></i> Email / SMTP Settings
+        <span class="text-muted fw-normal ms-1" style="font-size:.75rem">
+          — required for password reset emails
+        </span>
+      </div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('admin_save_smtp') }}">
+          <div class="row g-2 mb-3">
+            <div class="col-md-8">
+              <label class="form-label fw-semibold" style="font-size:.83rem">SMTP Host</label>
+              <input type="text" name="smtp_host" class="form-control form-control-sm"
+                     placeholder="smtp.gmail.com"
+                     value="{{ settings.smtp_host }}">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold" style="font-size:.83rem">Port</label>
+              <input type="number" name="smtp_port" class="form-control form-control-sm"
+                     placeholder="587"
+                     value="{{ settings.smtp_port }}">
+            </div>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold" style="font-size:.83rem">SMTP Username</label>
+              <input type="text" name="smtp_user" class="form-control form-control-sm"
+                     placeholder="user@example.com"
+                     value="{{ settings.smtp_user }}">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold" style="font-size:.83rem">SMTP Password</label>
+              <input type="password" name="smtp_password" class="form-control form-control-sm"
+                     placeholder="{% if settings.smtp_password %}(saved — enter to change){% else %}App password or SMTP password{% endif %}"
+                     value="">
+              <div class="form-text" style="font-size:.72rem">Leave blank to keep existing password.</div>
+            </div>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-md-8">
+              <label class="form-label fw-semibold" style="font-size:.83rem">From Address</label>
+              <input type="email" name="smtp_from" class="form-control form-control-sm"
+                     placeholder="noreply@yourorg.com"
+                     value="{{ settings.smtp_from }}">
+              <div class="form-text" style="font-size:.72rem">Defaults to SMTP username if blank.</div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold d-block" style="font-size:.83rem">Encryption</label>
+              <div class="form-check form-switch mt-1">
+                <input class="form-check-input" type="checkbox" name="smtp_tls" id="smtpTls"
+                       value="true" {{ 'checked' if settings.smtp_tls != 'false' }}>
+                <label class="form-check-label" for="smtpTls" style="font-size:.83rem">
+                  Use STARTTLS (port 587)
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="d-flex gap-2 align-items-center">
+            <button type="submit" class="btn btn-primary btn-sm">
+              <i class="bi bi-check-circle me-1"></i> Save Email Settings
+            </button>
+            <button type="submit" name="send_test" value="1"
+                    class="btn btn-outline-secondary btn-sm">
+              <i class="bi bi-send me-1"></i> Send Test Email
+            </button>
+          </div>
+
+          {% if settings.smtp_test_result %}
+          <div class="alert alert-{{ 'success' if settings.smtp_test_ok else 'danger' }} py-2 mt-3 mb-0"
+               style="font-size:.83rem">
+            <i class="bi bi-{{ 'check-circle' if settings.smtp_test_ok else 'x-circle' }} me-1"></i>
+            {{ settings.smtp_test_result }}
+          </div>
+          {% endif %}
         </form>
       </div>
     </div>

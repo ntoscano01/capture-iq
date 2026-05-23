@@ -215,6 +215,20 @@ def init_db():
                 value TEXT NOT NULL
             );
 
+            -- ── Password reset tokens ─────────────────────────────────────────
+            CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                token       TEXT NOT NULL UNIQUE,
+                expires_at  TEXT NOT NULL,
+                used        INTEGER DEFAULT 0,
+                created_at  TEXT DEFAULT (datetime('now'))
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_prt_token   ON password_reset_tokens(token);
+            CREATE INDEX IF NOT EXISTS idx_prt_user    ON password_reset_tokens(user_id);
+            CREATE INDEX IF NOT EXISTS idx_prt_expires ON password_reset_tokens(expires_at);
+
             -- ── COLLABORATION FEATURES ──────────────────────────────────────
             CREATE TABLE IF NOT EXISTS project_members (
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1367,11 +1381,12 @@ def count_users() -> int:
         return conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
 
 
-def create_user(username: str, email: str, password_hash: str, role: str = "user") -> int:
+def create_user(username: str, email: str, password_hash: str,
+                role: str = "user", is_active: int = 1) -> int:
     with get_db() as conn:
         cur = conn.execute(
-            "INSERT INTO users (username, email, password_hash, role) VALUES (?,?,?,?)",
-            (username, email or "", password_hash, role)
+            "INSERT INTO users (username, email, password_hash, role, is_active) VALUES (?,?,?,?,?)",
+            (username, email or "", password_hash, role, 1 if is_active else 0)
         )
         return cur.lastrowid
 
@@ -2952,3 +2967,115 @@ def get_checklist_items_for_gantt(project_id: int) -> list:
             ORDER BY ci.start_date ASC, ci.sort_order ASC
         """, (project_id,)).fetchall()
     return [dict(r) for r in rows]
+
+
+# ── Password Reset Tokens ──────────────────────────────────────────────────────
+
+def create_password_reset_token(user_id: int, hours_valid: int = 2) -> str:
+    """Generate a secure reset token, store it, return the token string."""
+    import secrets
+    from datetime import datetime, timedelta
+    token = secrets.token_urlsafe(48)
+    expires = (datetime.utcnow() + timedelta(hours=hours_valid)).isoformat()
+    with get_db() as conn:
+        # Invalidate any existing unused tokens for this user
+        conn.execute(
+            "UPDATE password_reset_tokens SET used=1 WHERE user_id=? AND used=0",
+            (user_id,)
+        )
+        conn.execute(
+            "INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES (?,?,?)",
+            (user_id, token, expires)
+        )
+    return token
+
+
+def get_valid_reset_token(token: str) -> dict | None:
+    """Return token row if valid (exists, not used, not expired). Otherwise None."""
+    from datetime import datetime
+    with get_db() as conn:
+        row = conn.execute(
+            """SELECT prt.*, u.username, u.email
+               FROM password_reset_tokens prt
+               JOIN users u ON prt.user_id = u.id
+               WHERE prt.token = ?
+                 AND prt.used  = 0
+                 AND prt.expires_at > ?""",
+            (token, datetime.utcnow().isoformat())
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def consume_reset_token(token: str, new_password_hash: str) -> bool:
+    """Mark token used and update password in one transaction."""
+    row = get_valid_reset_token(token)
+    if not row:
+        return False
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE password_reset_tokens SET used=1 WHERE token=?",
+            (token,)
+        )
+        conn.execute(
+            "UPDATE users SET password_hash=?, failed_login_attempts=0, locked_at=NULL WHERE id=?",
+            (new_password_hash, row["user_id"])
+        )
+    return True
+
+
+def get_user_by_email(email: str) -> dict | None:
+    """Look up a user by email address (case-insensitive)."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM users WHERE LOWER(TRIM(email)) = LOWER(TRIM(?))",
+            (email,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+# ── Email Sending ──────────────────────────────────────────────────────────────
+
+def send_email(to_address: str, subject: str, body_text: str, body_html: str = None) -> tuple[bool, str]:
+    """
+    Send an email using SMTP settings from app_settings.
+    Returns (success: bool, error_message: str).
+    """
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    smtp_host = get_app_setting("smtp_host", "")
+    smtp_port = int(get_app_setting("smtp_port", "587"))
+    smtp_user = get_app_setting("smtp_user", "")
+    smtp_pass = get_app_setting("smtp_password", "")
+    smtp_from = get_app_setting("smtp_from", smtp_user)
+    smtp_tls  = get_app_setting("smtp_tls", "true").lower() == "true"
+
+    if not smtp_host:
+        return False, "SMTP not configured. Ask your admin to set up email in App Settings."
+
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"]    = smtp_from or smtp_user
+        msg["To"]      = to_address
+
+        msg.attach(MIMEText(body_text, "plain"))
+        if body_html:
+            msg.attach(MIMEText(body_html, "html"))
+
+        if smtp_tls:
+            server = smtplib.SMTP(smtp_host, smtp_port, timeout=10)
+            server.ehlo()
+            server.starttls()
+        else:
+            server = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=10)
+
+        if smtp_user and smtp_pass:
+            server.login(smtp_user, smtp_pass)
+
+        server.sendmail(msg["From"], [to_address], msg.as_string())
+        server.quit()
+        return True, ""
+    except Exception as e:
+        return False, str(e)

@@ -8,6 +8,20 @@
   <span class="badge bg-secondary ms-2">{{ users|length }} user{{ 's' if users|length != 1 }}</span>
 </div>
 
+<!-- Pending approval banner -->
+{% set pending = users | selectattr('is_active', 'eq', 0) | selectattr('role', 'eq', 'user') | list %}
+{% if pending %}
+<div class="alert alert-warning d-flex align-items-center gap-2 mb-3">
+  <i class="bi bi-person-exclamation fs-5"></i>
+  <div class="flex-grow-1">
+    <strong>{{ pending|length }} pending registration{{ 's' if pending|length != 1 }}</strong> —
+    {% for p in pending %}<strong>{{ p.username }}</strong>{% if not loop.last %}, {% endif %}{% endfor %}
+    — awaiting approval.
+  </div>
+  <a href="#pending-section" class="btn btn-sm btn-warning">Review</a>
+</div>
+{% endif %}
+
 <div class="row g-3">
 
   <!-- User list -->
@@ -108,6 +122,20 @@
                 </button>
               </form>
               {% endif %}
+              <!-- Pending registration: Approve / Reject -->
+              {% if not u['is_active'] and u['role'] == 'user' %}
+              <form method="post" action="{{ url_for('admin_approve_registration', user_id=u['id']) }}" class="d-inline ms-1">
+                <button type="submit" class="btn btn-sm btn-success py-0" title="Approve registration">
+                  <i class="bi bi-check-lg"></i> Approve
+                </button>
+              </form>
+              <form method="post" action="{{ url_for('admin_reject_registration', user_id=u['id']) }}" class="d-inline ms-1"
+                    onsubmit="return confirm('Reject and delete this registration request?')">
+                <button type="submit" class="btn btn-sm btn-outline-danger py-0" title="Reject registration">
+                  <i class="bi bi-x-lg"></i>
+                </button>
+              </form>
+              {% else %}
               <!-- Activate / Deactivate -->
               <form method="post" action="{{ url_for('admin_toggle_user', user_id=u['id']) }}" class="d-inline ms-1">
                 <button type="submit" class="btn btn-sm {{ 'btn-outline-warning' if u['is_active'] else 'btn-outline-success' }} py-0"
@@ -115,6 +143,7 @@
                   <i class="bi {{ 'bi-pause-circle' if u['is_active'] else 'bi-play-circle' }}"></i>
                 </button>
               </form>
+              {% endif %}
               <!-- Reset password -->
               <button type="button" class="btn btn-sm btn-outline-secondary py-0 ms-1"
                       data-bs-toggle="modal" data-bs-target="#resetModal{{ u['id'] }}"
@@ -137,17 +166,41 @@
             <div class="modal-dialog modal-sm">
               <div class="modal-content">
                 <div class="modal-header py-2">
-                  <h6 class="modal-title">Reset password — {{ u['username'] }}</h6>
+                  <h6 class="modal-title"><i class="bi bi-key me-1"></i>Reset — {{ u['username'] }}</h6>
                   <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
-                <form method="post" action="{{ url_for('admin_reset_password', user_id=u['id']) }}">
+                <form method="post" action="{{ url_for('admin_reset_password', user_id=u['id']) }}"
+                      onsubmit="return validateReset('{{ u['id'] }}')">
                   <div class="modal-body">
-                    <input type="password" name="new_password" class="form-control form-control-sm"
-                           placeholder="New password (min 6 chars)" required minlength="6">
+                    <div class="mb-2">
+                      <label class="form-label mb-1" style="font-size:.78rem; font-weight:600">New Password</label>
+                      <div class="input-group input-group-sm">
+                        <input type="password" name="new_password" id="rp_{{ u['id'] }}"
+                               class="form-control form-control-sm"
+                               placeholder="New password" required minlength="6">
+                        <span class="input-group-text pw-eye" style="cursor:pointer"
+                              onclick="toggleField('rp_{{ u['id'] }}', 'rpe_{{ u['id'] }}')">
+                          <i class="bi bi-eye" id="rpe_{{ u['id'] }}"></i>
+                        </span>
+                      </div>
+                    </div>
+                    <div class="mb-1">
+                      <label class="form-label mb-1" style="font-size:.78rem; font-weight:600">Confirm Password</label>
+                      <div class="input-group input-group-sm">
+                        <input type="password" id="rpc_{{ u['id'] }}"
+                               class="form-control form-control-sm"
+                               placeholder="Re-enter password">
+                        <span class="input-group-text pw-eye" style="cursor:pointer"
+                              onclick="toggleField('rpc_{{ u['id'] }}', 'rpce_{{ u['id'] }}')">
+                          <i class="bi bi-eye" id="rpce_{{ u['id'] }}"></i>
+                        </span>
+                      </div>
+                      <div id="rpmatch_{{ u['id'] }}" class="form-text" style="font-size:.72rem"></div>
+                    </div>
                   </div>
                   <div class="modal-footer py-2">
                     <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-sm btn-primary">Reset</button>
+                    <button type="submit" class="btn btn-sm btn-primary">Reset Password</button>
                   </div>
                 </form>
               </div>
@@ -180,8 +233,26 @@
           </div>
           <div class="mb-2">
             <label class="form-label fw-semibold" style="font-size:.8rem">Password <span class="text-danger">*</span></label>
-            <input type="password" name="password" class="form-control form-control-sm" required
-                   minlength="6" placeholder="Min 6 characters">
+            <div class="input-group input-group-sm">
+              <input type="password" name="password" id="cu_pw" class="form-control form-control-sm" required
+                     minlength="6" placeholder="Min 6 characters">
+              <span class="input-group-text" style="cursor:pointer"
+                    onclick="toggleField('cu_pw','cu_eye')" title="Show/hide">
+                <i class="bi bi-eye" id="cu_eye"></i>
+              </span>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold" style="font-size:.8rem">Confirm Password <span class="text-danger">*</span></label>
+            <div class="input-group input-group-sm">
+              <input type="password" id="cu_pw2" class="form-control form-control-sm"
+                     placeholder="Re-enter password" oninput="checkCreateMatch()">
+              <span class="input-group-text" style="cursor:pointer"
+                    onclick="toggleField('cu_pw2','cu_eye2')" title="Show/hide">
+                <i class="bi bi-eye" id="cu_eye2"></i>
+              </span>
+            </div>
+            <div id="cu_match" class="form-text" style="font-size:.72rem"></div>
           </div>
           <div class="mb-3">
             <label class="form-label fw-semibold" style="font-size:.8rem">Role</label>
@@ -190,7 +261,8 @@
               <option value="admin">Admin</option>
             </select>
           </div>
-          <button type="submit" class="btn btn-primary btn-sm w-100">
+          <button type="submit" class="btn btn-primary btn-sm w-100"
+                  onclick="return validateCreate()">
             <i class="bi bi-person-plus"></i> Create User
           </button>
         </form>
@@ -277,5 +349,72 @@ function removeCaptureManager(userId, username) {
     console.error('Error:', error);
   });
 }
+
+// ── Password show/hide & confirm helpers ───────────────────────────────────────
+function toggleField(inputId, iconId) {
+  const input = document.getElementById(inputId);
+  const icon  = document.getElementById(iconId);
+  if (!input) return;
+  if (input.type === 'password') {
+    input.type = 'text';
+    icon.className = 'bi bi-eye-slash';
+  } else {
+    input.type = 'password';
+    icon.className = 'bi bi-eye';
+  }
+}
+
+function checkCreateMatch() {
+  const pw1 = document.getElementById('cu_pw').value;
+  const pw2 = document.getElementById('cu_pw2').value;
+  const msg = document.getElementById('cu_match');
+  if (!pw2) { msg.textContent = ''; return; }
+  if (pw1 === pw2) {
+    msg.textContent = '✓ Passwords match';
+    msg.style.color = '#198754';
+  } else {
+    msg.textContent = '✗ Passwords do not match';
+    msg.style.color = '#dc3545';
+  }
+}
+
+function validateCreate() {
+  const pw1 = document.getElementById('cu_pw').value;
+  const pw2 = document.getElementById('cu_pw2').value;
+  if (!pw2) { alert('Please confirm the password.'); return false; }
+  if (pw1 !== pw2) { alert('Passwords do not match.'); return false; }
+  return true;
+}
+
+function validateReset(uid) {
+  const pw1 = document.getElementById('rp_' + uid).value;
+  const pw2 = document.getElementById('rpc_' + uid).value;
+  const msg = document.getElementById('rpmatch_' + uid);
+  if (!pw2) {
+    if (msg) { msg.textContent = '✗ Please confirm the password'; msg.style.color = '#dc3545'; }
+    return false;
+  }
+  if (pw1 !== pw2) {
+    if (msg) { msg.textContent = '✗ Passwords do not match'; msg.style.color = '#dc3545'; }
+    return false;
+  }
+  return true;
+}
+
+// Live match feedback for reset modals
+document.addEventListener('input', function(e) {
+  if (!e.target.id || !e.target.id.startsWith('rpc_')) return;
+  const uid = e.target.id.replace('rpc_', '');
+  const pw1 = document.getElementById('rp_' + uid)?.value || '';
+  const pw2 = e.target.value;
+  const msg = document.getElementById('rpmatch_' + uid);
+  if (!msg) return;
+  if (!pw2) { msg.textContent = ''; return; }
+  if (pw1 === pw2) {
+    msg.textContent = '✓ Passwords match'; msg.style.color = '#198754';
+  } else {
+    msg.textContent = '✗ Passwords do not match'; msg.style.color = '#dc3545';
+  }
+});
 </script>
 {% endblock %}

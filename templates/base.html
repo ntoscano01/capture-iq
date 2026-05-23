@@ -18,32 +18,59 @@
     body { background: #f4f6f9; font-size: .92rem; }
     #sidebar {
       width: var(--sidebar-width);
-      min-height: 100vh;
+      height: 100vh;
       background: var(--sidebar-bg);
       position: fixed; top: 0; left: 0; z-index: 100;
       display: flex; flex-direction: column;
+      overflow: hidden;
     }
+    #sidebar-scroll {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+    #sidebar-scroll::-webkit-scrollbar { width: 4px; }
+    #sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
+    #sidebar-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,.15); border-radius: 2px; }
+    #sidebar-scroll::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.3); }
     #sidebar .brand {
-      padding: 1.2rem 1rem .8rem;
+      padding: 1rem 1rem .7rem;
       color: #fff;
       font-weight: 700; font-size: 1.05rem;
       border-bottom: 1px solid rgba(255,255,255,.15);
+      flex-shrink: 0;
     }
     #sidebar .brand small { display: block; font-weight: 400; font-size: .72rem; color: rgba(255,255,255,.6); }
     #sidebar .nav-link {
       color: rgba(255,255,255,.8);
-      padding: .55rem 1rem;
+      padding: .45rem 1rem;
       border-radius: 0;
-      font-size: .88rem;
+      font-size: .85rem;
     }
     #sidebar .nav-link:hover, #sidebar .nav-link.active {
       background: var(--sidebar-hover);
       color: #fff;
     }
     #sidebar .nav-link i { margin-right: .5rem; width: 18px; text-align: center; }
+    /* Collapsible section headers */
+    #sidebar .nav-section-toggle {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: .5rem 1rem .2rem;
+      font-size: .68rem; font-weight: 600;
+      color: rgba(255,255,255,.45);
+      letter-spacing: .08em; text-transform: uppercase;
+      cursor: pointer; user-select: none;
+      border: none; background: none; width: 100%;
+      transition: color .15s;
+    }
+    #sidebar .nav-section-toggle:hover { color: rgba(255,255,255,.7); }
+    #sidebar .nav-section-toggle .chevron {
+      font-size: .65rem; transition: transform .2s;
+    }
+    #sidebar .nav-section-toggle.collapsed .chevron { transform: rotate(-90deg); }
     #sidebar .nav-section {
-      padding: .6rem 1rem .2rem;
-      font-size: .7rem; font-weight: 600;
+      padding: .5rem 1rem .2rem;
+      font-size: .68rem; font-weight: 600;
       color: rgba(255,255,255,.4);
       letter-spacing: .08em; text-transform: uppercase;
     }
@@ -107,6 +134,9 @@
     {% endif %}
   </div>
 
+  <!-- Scrollable nav area -->
+  <div id="sidebar-scroll">
+
   {% if current_user.is_authenticated and current_user.is_admin %}
   <!-- ── Admin Sidebar ─────────────────────────────────────────────── -->
   <ul class="nav flex-column mt-2">
@@ -142,91 +172,133 @@
 
   {% else %}
   <!-- ── Regular User Sidebar ──────────────────────────────────────── -->
-  <ul class="nav flex-column mt-2">
+
+  {# Determine which sections are active for auto-expand #}
+  {% set pipeline_active = request.endpoint in ['ingest_page', 'topics', 'search'] %}
+  {% set capture_active  = request.endpoint in ['projects', 'project_detail', 'create_project', 'tasks', 'capture_dashboard'] %}
+  {% set insights_active = request.endpoint in ['analytics'] %}
+  {% set settings_active = request.endpoint in ['gdrive_settings', 'sharepoint_settings'] %}
+
+  <ul class="nav flex-column mt-1">
+    <!-- Dashboard (always visible) -->
     <li class="nav-item">
       <a class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}" href="{{ url_for('dashboard') }}">
         <i class="bi bi-speedometer2"></i> Dashboard
       </a>
     </li>
-    <li class="nav-section">Pipeline</li>
-    <li class="nav-item">
-      <a class="nav-link {% if request.endpoint == 'ingest_page' %}active{% endif %}" href="{{ url_for('ingest_page') }}">
-        <i class="bi bi-cloud-download"></i> Ingest Data
-      </a>
-    </li>
-    <li class="nav-item">
-      <a class="nav-link {% if request.endpoint == 'topics' and not request.args.get('favorited') and not request.args.get('topic_status') %}active{% endif %}"
-         href="{{ url_for('topics') }}">
-        <i class="bi bi-tags"></i> Topics
-      </a>
-    </li>
-    <li class="nav-item">
-      <a class="nav-link {% if request.endpoint == 'topics' and request.args.get('favorited') == '1' %}active{% endif %}"
-         href="{{ url_for('topics', favorited='1') }}">
-        <i class="bi bi-star-fill text-warning"></i> Favorites
-      </a>
-    </li>
-    <li class="nav-item">
-      <a class="nav-link {% if request.endpoint == 'topics' and request.args.get('topic_status') == 'nominated' %}active{% endif %}"
-         href="{{ url_for('topics', topic_status='nominated') }}">
-        <i class="bi bi-hand-thumbs-up-fill" style="color:#3dd68c"></i> Interested
-      </a>
-    </li>
-    <li class="nav-item">
-      <a class="nav-link {% if request.endpoint == 'topics' and request.args.get('topic_status') == 'passed' %}active{% endif %}"
-         href="{{ url_for('topics', topic_status='passed') }}">
-        <i class="bi bi-hand-thumbs-down-fill text-danger"></i> Not Interested
-      </a>
-    </li>
-    <li class="nav-section">Capture</li>
-    <!-- Capture Management (Capture Managers Only) -->
-    {% if user_is_capture_manager() %}
-    <li class="nav-item">
-      <a class="nav-link {% if request.endpoint == 'capture_dashboard' %}active{% endif %}"
-         href="{{ url_for('capture_dashboard') }}">
-        <i class="bi bi-bullseye"></i> Capture Planning
-      </a>
-    </li>
-    {% endif %}
-    <li class="nav-item">
-      <a class="nav-link {% if request.endpoint in ['projects', 'project_detail', 'create_project'] %}active{% endif %}"
-         href="{{ url_for('projects') }}">
-        <i class="bi bi-folder2-open"></i> Projects
-      </a>
-    </li>
-    <li class="nav-item">
-      <a class="nav-link {% if request.endpoint == 'tasks' %}active{% endif %}"
-         href="{{ url_for('tasks') }}">
-        <i class="bi bi-check2-square"></i> Tasks
-        {% if task_counts and task_counts.overdue > 0 %}
-          <span class="badge bg-danger ms-1" style="font-size:.6rem">{{ task_counts.overdue }}</span>
-        {% endif %}
-      </a>
-    </li>
-    <li class="nav-section">Insights</li>
-    <li class="nav-item">
-      <a class="nav-link {% if request.endpoint == 'analytics' %}active{% endif %}"
-         href="{{ url_for('analytics') }}">
-        <i class="bi bi-bar-chart-line-fill"></i> Analytics
-      </a>
-    </li>
-  </ul>
-  {% endif %}
 
-  <ul class="nav flex-column">
-    <li class="nav-section" style="margin-top:.5rem">Help</li>
+    <!-- ── Pipeline section ── -->
     <li class="nav-item">
+      <button class="nav-section-toggle {% if not pipeline_active %}collapsed{% endif %}"
+              data-bs-toggle="collapse" data-bs-target="#sec-pipeline"
+              aria-expanded="{{ 'true' if pipeline_active else 'false' }}">
+        Pipeline
+        <i class="bi bi-chevron-down chevron"></i>
+      </button>
+    </li>
+    <div class="collapse {% if pipeline_active %}show{% endif %}" id="sec-pipeline">
+      <li class="nav-item">
+        <a class="nav-link {% if request.endpoint == 'ingest_page' %}active{% endif %}" href="{{ url_for('ingest_page') }}">
+          <i class="bi bi-cloud-download"></i> Ingest Data
+        </a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link {% if request.endpoint == 'topics' and not request.args.get('favorited') and not request.args.get('topic_status') %}active{% endif %}"
+           href="{{ url_for('topics') }}">
+          <i class="bi bi-tags"></i> Topics
+        </a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link {% if request.endpoint == 'topics' and request.args.get('favorited') == '1' %}active{% endif %}"
+           href="{{ url_for('topics', favorited='1') }}">
+          <i class="bi bi-star-fill text-warning"></i> Favorites
+        </a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link {% if request.endpoint == 'topics' and request.args.get('topic_status') == 'nominated' %}active{% endif %}"
+           href="{{ url_for('topics', topic_status='nominated') }}">
+          <i class="bi bi-hand-thumbs-up-fill" style="color:#3dd68c"></i> Interested
+        </a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link {% if request.endpoint == 'topics' and request.args.get('topic_status') == 'passed' %}active{% endif %}"
+           href="{{ url_for('topics', topic_status='passed') }}">
+          <i class="bi bi-hand-thumbs-down-fill text-danger"></i> Not Interested
+        </a>
+      </li>
+    </div>
+
+    <!-- ── Capture section ── -->
+    <li class="nav-item">
+      <button class="nav-section-toggle {% if not capture_active %}collapsed{% endif %}"
+              data-bs-toggle="collapse" data-bs-target="#sec-capture"
+              aria-expanded="{{ 'true' if capture_active else 'false' }}">
+        Capture
+        <i class="bi bi-chevron-down chevron"></i>
+      </button>
+    </li>
+    <div class="collapse {% if capture_active %}show{% endif %}" id="sec-capture">
+      {% if user_is_capture_manager() %}
+      <li class="nav-item">
+        <a class="nav-link {% if request.endpoint == 'capture_dashboard' %}active{% endif %}"
+           href="{{ url_for('capture_dashboard') }}">
+          <i class="bi bi-bullseye"></i> Capture Planning
+        </a>
+      </li>
+      {% endif %}
+      <li class="nav-item">
+        <a class="nav-link {% if request.endpoint in ['projects', 'project_detail', 'create_project'] %}active{% endif %}"
+           href="{{ url_for('projects') }}">
+          <i class="bi bi-folder2-open"></i> Projects
+        </a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link {% if request.endpoint == 'tasks' %}active{% endif %}"
+           href="{{ url_for('tasks') }}">
+          <i class="bi bi-check2-square"></i> Tasks
+          {% if task_counts and task_counts.overdue > 0 %}
+            <span class="badge bg-danger ms-1" style="font-size:.6rem">{{ task_counts.overdue }}</span>
+          {% endif %}
+        </a>
+      </li>
+    </div>
+
+    <!-- ── Insights section ── -->
+    <li class="nav-item">
+      <button class="nav-section-toggle {% if not insights_active %}collapsed{% endif %}"
+              data-bs-toggle="collapse" data-bs-target="#sec-insights"
+              aria-expanded="{{ 'true' if insights_active else 'false' }}">
+        Insights
+        <i class="bi bi-chevron-down chevron"></i>
+      </button>
+    </li>
+    <div class="collapse {% if insights_active %}show{% endif %}" id="sec-insights">
+      <li class="nav-item">
+        <a class="nav-link {% if request.endpoint == 'analytics' %}active{% endif %}"
+           href="{{ url_for('analytics') }}">
+          <i class="bi bi-bar-chart-line-fill"></i> Analytics
+        </a>
+      </li>
+    </div>
+
+    <!-- ── Help (always visible) ── -->
+    <li class="nav-item mt-1">
       <a class="nav-link {% if request.endpoint == 'user_guide' %}active{% endif %}"
          href="{{ url_for('user_guide') }}">
         <i class="bi bi-book-half"></i> User Guide
       </a>
     </li>
-  </ul>
 
-  <div class="mt-auto" style="border-top:1px solid rgba(255,255,255,.15)">
-    {% if not (current_user.is_authenticated and current_user.is_admin) %}
-    <ul class="nav flex-column">
-      <li class="nav-section" style="margin-top:.5rem">Settings</li>
+    <!-- ── Settings section ── -->
+    <li class="nav-item">
+      <button class="nav-section-toggle {% if not settings_active %}collapsed{% endif %}"
+              data-bs-toggle="collapse" data-bs-target="#sec-settings"
+              aria-expanded="{{ 'true' if settings_active else 'false' }}">
+        Settings
+        <i class="bi bi-chevron-down chevron"></i>
+      </button>
+    </li>
+    <div class="collapse {% if settings_active %}show{% endif %}" id="sec-settings">
       <li class="nav-item">
         <a class="nav-link {% if request.endpoint == 'gdrive_settings' %}active{% endif %}"
            href="{{ url_for('gdrive_settings') }}">
@@ -244,11 +316,18 @@
           <i class="bi bi-share text-muted"></i> SharePoint
         </a>
       </li>
-    </ul>
-    {% endif %}
-    {% if current_user.is_authenticated %}
-    <div style="padding:.6rem 1rem; border-top:1px solid rgba(255,255,255,.1); font-size:.78rem; color:rgba(255,255,255,.6)">
-      <div class="d-flex align-items-center justify-content-between mb-2">
+    </div>
+
+  </ul>
+  {% endif %}
+
+  </div><!-- /sidebar-scroll -->
+
+  <!-- Pinned user footer (never scrolls away) -->
+  {% if current_user.is_authenticated %}
+  <div style="border-top:1px solid rgba(255,255,255,.15); flex-shrink:0">
+    <div style="padding:.55rem 1rem; font-size:.78rem; color:rgba(255,255,255,.6)">
+      <div class="d-flex align-items-center justify-content-between mb-1">
         <div>
           <i class="bi bi-person-circle me-1"></i>
           <span>{{ current_user.username }}</span>
@@ -267,7 +346,7 @@
         <span id="notif-badge" class="badge bg-danger" style="font-size:.6rem; display:none;">0</span>
       </a>
     </div>
-    <div style="padding:.4rem .75rem .6rem">
+    <div style="padding:.3rem .75rem .5rem">
       <form method="post" action="{{ url_for('shutdown') }}"
             onsubmit="return confirm('Shut down CaptureIQ? The server will stop and you will need to relaunch it.')">
         <button type="submit" class="btn btn-sm w-100"
@@ -276,8 +355,8 @@
         </button>
       </form>
     </div>
-    {% endif %}
   </div>
+  {% endif %}
 </nav>
 
 <!-- Main content -->

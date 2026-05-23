@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Create Account — CaptureIQ</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <style>
+    body { background: #f4f6f9; }
+    .reg-card {
+      max-width: 440px; margin: 60px auto;
+      border: none; border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,.10);
+    }
+    .reg-header {
+      background: #003087; color: #fff;
+      border-radius: 12px 12px 0 0;
+      padding: 1.75rem 2rem; text-align: center;
+    }
+    .reg-header h1 { font-size: 1.3rem; font-weight: 700; margin: .4rem 0 0; }
+    .reg-header small { color: rgba(255,255,255,.7); font-size: .8rem; }
+    .pw-toggle {
+      cursor: pointer; background: #f8f9fa; border: 1px solid #ced4da;
+      border-left: none; border-radius: 0 4px 4px 0; padding: 0 .6rem;
+      color: #6c757d;
+    }
+    .pw-toggle:hover { color: #003087; }
+  </style>
+</head>
+<body>
+
+<div class="reg-card card">
+  <div class="reg-header">
+    <i class="bi bi-rocket-takeoff-fill text-warning fs-2"></i>
+    <h1>Create Account</h1>
+    <small>CaptureIQ — SBIR Capture Pipeline</small>
+  </div>
+  <div class="card-body p-4">
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for cat, msg in messages %}
+          <div class="alert alert-{{ cat }} py-2 mb-3" style="font-size:.88rem">{{ msg }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <form method="post" id="regForm" novalidate>
+
+      <!-- Username -->
+      <div class="mb-3">
+        <label class="form-label fw-semibold" style="font-size:.85rem">
+          Username <span class="text-danger">*</span>
+        </label>
+        <input type="text" name="username" class="form-control" required
+               minlength="3" autocomplete="username"
+               placeholder="Choose a username (min 3 chars)"
+               value="{{ username }}">
+      </div>
+
+      <!-- Email -->
+      <div class="mb-3">
+        <label class="form-label fw-semibold" style="font-size:.85rem">
+          Email Address
+          <span class="text-muted fw-normal" style="font-size:.75rem">
+            — used for password recovery
+          </span>
+        </label>
+        <input type="email" name="email" class="form-control"
+               autocomplete="email"
+               placeholder="your@email.com"
+               value="{{ email }}">
+      </div>
+
+      <!-- Password -->
+      <div class="mb-3">
+        <label class="form-label fw-semibold" style="font-size:.85rem">
+          Password <span class="text-danger">*</span>
+        </label>
+        <div class="input-group">
+          <input type="password" name="password" id="pw1" class="form-control" required
+                 autocomplete="new-password"
+                 placeholder="Choose a password"
+                 oninput="checkStrength(this.value)">
+          <span class="pw-toggle" onclick="togglePw('pw1', 'eye1')" title="Show/hide">
+            <i class="bi bi-eye" id="eye1"></i>
+          </span>
+        </div>
+        <div class="progress mt-2" style="height:4px">
+          <div id="strength-bar" class="progress-bar" style="width:0%; transition:width .3s"></div>
+        </div>
+        <div id="strength-label" class="form-text" style="font-size:.73rem"></div>
+      </div>
+
+      <!-- Confirm Password -->
+      <div class="mb-4">
+        <label class="form-label fw-semibold" style="font-size:.85rem">
+          Confirm Password <span class="text-danger">*</span>
+        </label>
+        <div class="input-group">
+          <input type="password" name="confirm" id="pw2" class="form-control" required
+                 autocomplete="new-password"
+                 placeholder="Re-enter your password"
+                 oninput="checkMatch()">
+          <span class="pw-toggle" onclick="togglePw('pw2', 'eye2')" title="Show/hide">
+            <i class="bi bi-eye" id="eye2"></i>
+          </span>
+        </div>
+        <div id="match-msg" class="form-text" style="font-size:.73rem"></div>
+      </div>
+
+      <button type="submit" class="btn btn-primary w-100"
+              style="background:#003087; border-color:#003087">
+        <i class="bi bi-person-plus me-1"></i> Create Account
+      </button>
+    </form>
+
+    <div class="text-center mt-3" style="font-size:.82rem; color:#6c757d">
+      Already have an account?
+      <a href="{{ url_for('login') }}" style="color:#003087; font-weight:600">Sign in</a>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+function togglePw(inputId, iconId) {
+  const input = document.getElementById(inputId);
+  const icon  = document.getElementById(iconId);
+  if (input.type === 'password') {
+    input.type = 'text';
+    icon.className = 'bi bi-eye-slash';
+  } else {
+    input.type = 'password';
+    icon.className = 'bi bi-eye';
+  }
+}
+
+function checkStrength(pw) {
+  const bar   = document.getElementById('strength-bar');
+  const label = document.getElementById('strength-label');
+  let score = 0;
+  if (pw.length >= 8)  score++;
+  if (pw.length >= 12) score++;
+  if (/[A-Z]/.test(pw)) score++;
+  if (/[0-9]/.test(pw)) score++;
+  if (/[^A-Za-z0-9]/.test(pw)) score++;
+  const levels = [
+    { w: '20%', cls: 'bg-danger',  txt: 'Very weak',  color: '#dc3545' },
+    { w: '40%', cls: 'bg-danger',  txt: 'Weak',       color: '#dc3545' },
+    { w: '60%', cls: 'bg-warning', txt: 'Fair',       color: '#856404' },
+    { w: '80%', cls: 'bg-info',    txt: 'Good',       color: '#0c5460' },
+    { w: '100%',cls: 'bg-success', txt: 'Strong',     color: '#0a3622' },
+  ];
+  const lvl = levels[Math.min(score, 4)];
+  bar.style.width = pw.length ? lvl.w : '0%';
+  bar.className   = 'progress-bar ' + (pw.length ? lvl.cls : '');
+  label.textContent  = pw.length ? lvl.txt : '';
+  label.style.color  = pw.length ? lvl.color : '';
+  checkMatch();
+}
+
+function checkMatch() {
+  const pw1 = document.getElementById('pw1').value;
+  const pw2 = document.getElementById('pw2').value;
+  const msg = document.getElementById('match-msg');
+  if (!pw2) { msg.textContent = ''; return; }
+  if (pw1 === pw2) {
+    msg.textContent = '✓ Passwords match';
+    msg.style.color = '#198754';
+  } else {
+    msg.textContent = '✗ Passwords do not match';
+    msg.style.color = '#dc3545';
+  }
+}
+
+// Client-side confirm check before submit
+document.getElementById('regForm').addEventListener('submit', function(e) {
+  const pw1 = document.getElementById('pw1').value;
+  const pw2 = document.getElementById('pw2').value;
+  if (pw1 !== pw2) {
+    e.preventDefault();
+    document.getElementById('match-msg').textContent = '✗ Passwords do not match';
+    document.getElementById('match-msg').style.color = '#dc3545';
+    document.getElementById('pw2').focus();
+  }
+});
+</script>
+</body>
+</html>
