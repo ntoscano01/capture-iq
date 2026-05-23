@@ -1,0 +1,639 @@
+{% extends "base.html" %}
+{% block title %}User Guide — CaptureIQ{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <i class="bi bi-book-half text-primary fs-5"></i>
+  <h1>User Guide</h1>
+</div>
+
+<div class="row">
+  <div class="col-lg-9">
+    <!-- Table of Contents -->
+    <div class="card mb-4">
+      <div class="card-header bg-light">
+        <h5 class="mb-0"><i class="bi bi-list"></i> Table of Contents</h5>
+      </div>
+      <div class="card-body">
+        <div class="row">
+          <div class="col-md-6">
+            <ul class="list-unstyled">
+              <li><a href="#getting-started" class="text-decoration-none">Getting Started</a></li>
+              <li><a href="#key-features" class="text-decoration-none">Key Features</a></li>
+              <li><a href="#common-tasks" class="text-decoration-none">Common Tasks</a></li>
+              <li><a href="#capture-planning" class="text-decoration-none">Capture Planning</a></li>
+              <li><a href="#collaboration" class="text-decoration-none">Collaboration Features</a></li>
+            </ul>
+          </div>
+          <div class="col-md-6">
+            <ul class="list-unstyled">
+              <li><a href="#project-roles" class="text-decoration-none">Project Roles</a></li>
+              <li><a href="#workflows" class="text-decoration-none">Common Workflows</a></li>
+              <li><a href="#tips" class="text-decoration-none">Tips & Tricks</a></li>
+              <li><a href="#troubleshooting" class="text-decoration-none">Troubleshooting</a></li>
+              <li><a href="#status-indicators" class="text-decoration-none">Status Indicators</a></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Getting Started -->
+    <section id="getting-started" class="mb-4">
+      <div class="card">
+        <div class="card-header bg-light">
+          <h4 class="mb-0"><i class="bi bi-rocket-takeoff"></i> Getting Started</h4>
+        </div>
+        <div class="card-body">
+          <h5>Default Credentials (Development)</h5>
+          <ul>
+            <li><strong>Username:</strong> admin</li>
+            <li><strong>Password:</strong> admin123</li>
+          </ul>
+          <p class="text-warning mt-2"><i class="bi bi-exclamation-triangle"></i> <strong>Important:</strong> Change these credentials in production!</p>
+
+          <h5 class="mt-4">First Steps</h5>
+          <ol>
+            <li>Log in with your credentials</li>
+            <li>Go to <strong>Dashboard</strong> to see project pipeline</li>
+            <li>Create a project or browse existing ones</li>
+            <li>If you're a Capture Manager, access <strong>Capture Planning</strong></li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <!-- Key Features -->
+    <section id="key-features" class="mb-4">
+      <div class="card">
+        <div class="card-header bg-light">
+          <h4 class="mb-0"><i class="bi bi-star"></i> Key Features</h4>
+        </div>
+        <div class="card-body">
+          <h5><i class="bi bi-people"></i> For Everyone</h5>
+          <ul>
+            <li><strong>Dashboard:</strong> View project pipeline and recent activity</li>
+            <li><strong>Projects:</strong> Manage SBIR project proposals</li>
+            <li><strong>Topics:</strong> Browse and search SBIR solicitation topics</li>
+          </ul>
+
+          <h5 class="mt-3"><i class="bi bi-shield-lock"></i> For Admins</h5>
+          <ul>
+            <li><strong>Users:</strong> Manage user accounts, reset passwords, unlock accounts</li>
+            <li><strong>Settings:</strong> Configure application settings</li>
+            <li><strong>Role Elevation:</strong> Promote users to Capture Manager</li>
+          </ul>
+
+          <h5 class="mt-3"><i class="bi bi-bullseye"></i> For Capture Managers</h5>
+          <ul>
+            <li><strong>Capture Planning:</strong> Create and manage capture plans</li>
+            <li><strong>Team Management:</strong> Add team members to capture plans</li>
+            <li><strong>Project Linking:</strong> Connect projects to capture plans</li>
+            <li><strong>Progress Tracking:</strong> Track capture plan status through stages</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Common Tasks -->
+    <section id="common-tasks" class="mb-4">
+      <div class="card">
+        <div class="card-header bg-light">
+          <h4 class="mb-0"><i class="bi bi-checklist"></i> Common Tasks</h4>
+        </div>
+        <div class="card-body">
+          <h5><i class="bi bi-person-plus"></i> Elevating a User to Capture Manager</h5>
+          <ol>
+            <li>Log in as admin</li>
+            <li>Go to <strong>Admin → Users</strong></li>
+            <li>Find the user you want to promote</li>
+            <li>Click the <strong>✓</strong> (shield icon) button next to their name</li>
+            <li>Confirm the action in the dialog</li>
+            <li>User is now a Capture Manager!</li>
+          </ol>
+
+          <h5 class="mt-3"><i class="bi bi-folder-plus"></i> Creating a Project</h5>
+          <ol>
+            <li>Go to <strong>Projects</strong> in the navigation</li>
+            <li>Click <strong>Create Project</strong></li>
+            <li>Fill in project details:
+              <ul>
+                <li>Project name</li>
+                <li>SBIR topic/solicitation</li>
+                <li>Phase (Phase I or Phase II)</li>
+                <li>Due date (optional)</li>
+              </ul>
+            </li>
+            <li>Click <strong>Create Project</strong></li>
+          </ol>
+
+          <h5 class="mt-3"><i class="bi bi-person-check"></i> Sharing a Project</h5>
+          <ol>
+            <li>Open the project you want to share</li>
+            <li>Scroll to <strong>Team Members</strong> section</li>
+            <li>Click <strong>Add Team Member</strong></li>
+            <li>Select a user from the dropdown</li>
+            <li>Choose their role:
+              <ul>
+                <li><strong>Editor:</strong> Can edit project and upload files</li>
+                <li><strong>Viewer:</strong> Can view and comment only</li>
+              </ul>
+            </li>
+            <li>Click <strong>Add</strong></li>
+          </ol>
+
+          <h5 class="mt-3"><i class="bi bi-chat-dots"></i> Leaving a Comment</h5>
+          <ol>
+            <li>Open a project</li>
+            <li>Scroll to <strong>Team Comments</strong> section</li>
+            <li>Type your comment in the text box</li>
+            <li>Click <strong>Post Comment</strong></li>
+            <li>Team members will be notified automatically</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <!-- Capture Planning -->
+    <section id="capture-planning" class="mb-4">
+      <div class="card">
+        <div class="card-header bg-light">
+          <h4 class="mb-0"><i class="bi bi-bullseye"></i> Capture Planning (For Capture Managers)</h4>
+        </div>
+        <div class="card-body">
+          <h5><i class="bi bi-plus-circle"></i> Creating a Capture Plan</h5>
+          <ol>
+            <li>Go to <strong>Capture Planning</strong> in navigation</li>
+            <li>Click <strong>Create Capture Plan</strong></li>
+            <li>Fill in capture plan details:
+              <ul>
+                <li><strong>Plan Name:</strong> e.g., "Company X Proposal"</li>
+                <li><strong>Customer Name:</strong> The target customer</li>
+                <li><strong>Confidence Level:</strong> High, Medium, or Low</li>
+                <li><strong>Proposal Due Date:</strong> When proposal is due</li>
+                <li><strong>Win Probability:</strong> Estimated chance of winning (optional)</li>
+              </ul>
+            </li>
+            <li>Click <strong>Create Plan</strong></li>
+          </ol>
+
+          <h5 class="mt-3"><i class="bi bi-people-fill"></i> Managing Team Members on Plans</h5>
+          <ol>
+            <li>Open a capture plan</li>
+            <li>Find <strong>Team Members</strong> section</li>
+            <li>Click <strong>Add Team Member</strong></li>
+            <li>Select a user to add to the plan</li>
+            <li>To remove, click the <strong>✕</strong> button next to their name</li>
+          </ol>
+
+          <h5 class="mt-3"><i class="bi bi-link-45deg"></i> Linking Projects to Capture Plans</h5>
+          <ol>
+            <li>Open a capture plan</li>
+            <li>Scroll to <strong>Linked Projects</strong> section</li>
+            <li>Select a project from the dropdown</li>
+            <li>Click <strong>Link Project</strong></li>
+            <li>Project is now linked to the capture plan</li>
+          </ol>
+
+          <h5 class="mt-3"><i class="bi bi-arrow-right-circle"></i> Capture Plan Stages</h5>
+          <p>Plans automatically display in stages to track progress:</p>
+          <ul>
+            <li><strong>🕐 Pre-Release:</strong> Before RFP is released</li>
+            <li><strong>📧 RFP Released:</strong> RFP has been released</li>
+            <li><strong>✓ Proposal Submitted:</strong> Our proposal submitted</li>
+            <li><strong>🏆 Won:</strong> We won the contract</li>
+            <li><strong>✗ Lost:</strong> We didn't win</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Collaboration Features -->
+    <section id="collaboration" class="mb-4">
+      <div class="card">
+        <div class="card-header bg-light">
+          <h4 class="mb-0"><i class="bi bi-chat-left-text"></i> Collaboration Features</h4>
+        </div>
+        <div class="card-body">
+          <h5><i class="bi bi-chat-dots"></i> Team Comments</h5>
+          <p>Keep your team in sync with comments on projects:</p>
+          <ul>
+            <li>Comments appear immediately for all team members</li>
+            <li>All team members are notified when someone comments</li>
+            <li>You can delete your own comments (owners can delete any comment)</li>
+            <li>Use comments to ask questions, share feedback, and confirm milestones</li>
+          </ul>
+
+          <h5 class="mt-3"><i class="bi bi-link-45deg"></i> Linking External Documents</h5>
+          <p>Link proposal documents from SharePoint or Google Drive:</p>
+          <ol>
+            <li>Open the project</li>
+            <li>Scroll to <strong>Shared Documents</strong> section</li>
+            <li>Click <strong>Link Document</strong></li>
+            <li>Fill in:
+              <ul>
+                <li><strong>Document Source:</strong> SharePoint, Google Drive, or Other URL</li>
+                <li><strong>Document URL:</strong> Full link to your document</li>
+                <li><strong>Title (optional):</strong> Friendly name (e.g., "Tech Proposal V1")</li>
+              </ul>
+            </li>
+            <li>Click <strong>Link Document</strong></li>
+          </ol>
+          <p class="text-muted small mt-2"><i class="bi bi-info-circle"></i> Tip: Use descriptive titles and include version numbers for drafts</p>
+
+          <h5 class="mt-3"><i class="bi bi-bell"></i> Notifications</h5>
+          <p>Stay updated with automatic notifications:</p>
+          <ul>
+            <li>You're notified when someone adds you to a project</li>
+            <li>You're notified when someone comments on your project</li>
+            <li>Check your notification bell in the sidebar for unread count</li>
+            <li>Notifications update automatically (refresh not needed)</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Project Roles -->
+    <section id="project-roles" class="mb-4">
+      <div class="card">
+        <div class="card-header bg-light">
+          <h4 class="mb-0"><i class="bi bi-shield-check"></i> Project Roles Explained</h4>
+        </div>
+        <div class="card-body">
+          <div class="row mb-3">
+            <div class="col-md-4">
+              <div class="card border-primary">
+                <div class="card-header bg-primary text-white">
+                  <strong>Owner</strong>
+                </div>
+                <div class="card-body">
+                  <p class="text-muted small">Full control over the project</p>
+                  <p class="mb-2"><strong>Can:</strong></p>
+                  <ul class="small">
+                    <li>✅ Edit project details</li>
+                    <li>✅ Upload/delete files</li>
+                    <li>✅ Manage team members</li>
+                    <li>✅ Delete project</li>
+                    <li>✅ Delete any comment</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="card border-success">
+                <div class="card-header bg-success text-white">
+                  <strong>Editor</strong>
+                </div>
+                <div class="card-body">
+                  <p class="text-muted small">Active contributor to project</p>
+                  <p class="mb-2"><strong>Can:</strong></p>
+                  <ul class="small">
+                    <li>✅ Edit project details</li>
+                    <li>✅ Upload files</li>
+                    <li>✅ Comment</li>
+                    <li>✅ Delete own comments</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="card border-info">
+                <div class="card-header bg-info text-white">
+                  <strong>Viewer</strong>
+                </div>
+                <div class="card-body">
+                  <p class="text-muted small">Reviewer or observer</p>
+                  <p class="mb-2"><strong>Can:</strong></p>
+                  <ul class="small">
+                    <li>✅ View project</li>
+                    <li>✅ View files</li>
+                    <li>✅ Comment</li>
+                    <li>✅ Delete own comments</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Common Workflows -->
+    <section id="workflows" class="mb-4">
+      <div class="card">
+        <div class="card-header bg-light">
+          <h4 class="mb-0"><i class="bi bi-diagram-3"></i> Common Workflows</h4>
+        </div>
+        <div class="card-body">
+          <h5><strong>Scenario 1: Getting Feedback on a Draft</strong></h5>
+          <ol>
+            <li>You create a project for a new SBIR proposal</li>
+            <li>You upload the technical proposal draft</li>
+            <li>You share with Sarah (Editor) and Bob (Viewer)</li>
+            <li>Sarah uploads her cost proposal section</li>
+            <li>Sarah comments: "See cost section, needs review"</li>
+            <li>Bob comments: "Budget looks reasonable"</li>
+            <li>You see notifications and update the draft</li>
+            <li>You upload the new version</li>
+          </ol>
+
+          <h5 class="mt-3"><strong>Scenario 2: Team Proposal Development</strong></h5>
+          <ol>
+            <li>Alice creates project "Phase 1 Proposal"</li>
+            <li>Alice invites Bob (Editor), Charlie (Editor), Diana (Viewer)</li>
+            <li>Bob uploads technical volume</li>
+            <li>Charlie uploads management plan</li>
+            <li>All team members see progress in one place</li>
+            <li>Notifications alert everyone when new files appear</li>
+            <li>Team comments document all decisions</li>
+          </ol>
+
+          <h5 class="mt-3"><strong>Scenario 3: Multi-Week Development</strong></h5>
+          <ol>
+            <li>Project created with due date</li>
+            <li>Team members see progress toward deadline</li>
+            <li>Comments document decisions made</li>
+            <li>Activity log shows what changed when</li>
+            <li>Notifications keep everyone in sync</li>
+            <li>Linked documents stay updated in SharePoint/Drive</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <!-- Status Indicators -->
+    <section id="status-indicators" class="mb-4">
+      <div class="card">
+        <div class="card-header bg-light">
+          <h4 class="mb-0"><i class="bi bi-palette"></i> Status Indicators</h4>
+        </div>
+        <div class="card-body">
+          <h5>User Status (Admin → Users)</h5>
+          <ul>
+            <li><span class="badge bg-success">Active</span> User can log in</li>
+            <li><span class="badge bg-secondary">Inactive</span> User is disabled</li>
+            <li><span class="badge bg-danger">Locked</span> Too many failed login attempts</li>
+            <li><span class="badge bg-info">Capture Manager</span> Has access to capture planning</li>
+          </ul>
+
+          <h5 class="mt-3">Confidence Levels</h5>
+          <ul>
+            <li><span class="badge" style="background: #198754;">High</span> Strong win probability</li>
+            <li><span class="badge" style="background: #fd7e14;">Medium</span> Moderate win probability</li>
+            <li><span class="badge" style="background: #dc3545;">Low</span> Low win probability</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tips & Tricks -->
+    <section id="tips" class="mb-4">
+      <div class="card">
+        <div class="card-header bg-light">
+          <h4 class="mb-0"><i class="bi bi-lightbulb"></i> Tips & Tricks</h4>
+        </div>
+        <div class="card-body">
+          <h5><i class="bi bi-check-circle"></i> Pro Tips</h5>
+          <ul>
+            <li>Use descriptive project names that include solicitation name and phase</li>
+            <li>Assign clear roles — Editors for active contributors, Viewers for reviewers</li>
+            <li>When commenting, reference specific files and page numbers</li>
+            <li>Link documents early — don't wait until the last minute</li>
+            <li>Check notifications daily to stay on top of team activity</li>
+            <li>Use comments to celebrate milestones and maintain team morale</li>
+          </ul>
+
+          <h5 class="mt-3"><i class="bi bi-exclamation-circle"></i> Things to Know</h5>
+          <ul>
+            <li>Deleting a comment is permanent — even owners can't undo it</li>
+            <li>Removing a team member doesn't delete their comments</li>
+            <li>Linked documents are links only — deleting them from SharePoint/Drive removes access</li>
+            <li>Projects are private by default — only invited members can access</li>
+            <li>Always save documents to their original location (SharePoint/Drive) for version control</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Troubleshooting -->
+    <section id="troubleshooting" class="mb-4">
+      <div class="card">
+        <div class="card-header bg-light">
+          <h4 class="mb-0"><i class="bi bi-wrench"></i> Troubleshooting</h4>
+        </div>
+        <div class="card-body">
+          <div class="accordion" id="troubleshootingAccordion">
+            <!-- Issue 1 -->
+            <div class="accordion-item">
+              <h2 class="accordion-header">
+                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#issue1">
+                  <strong>Invalid username or password</strong>
+                </button>
+              </h2>
+              <div id="issue1" class="accordion-collapse collapse" data-bs-parent="#troubleshootingAccordion">
+                <div class="accordion-body">
+                  <ul>
+                    <li>Verify username spelling (case-sensitive)</li>
+                    <li>Check Caps Lock is off</li>
+                    <li>Your account might be locked after failed attempts — ask admin to unlock</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            <!-- Issue 2 -->
+            <div class="accordion-item">
+              <h2 class="accordion-header">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#issue2">
+                  <strong>Admin access required</strong>
+                </button>
+              </h2>
+              <div id="issue2" class="accordion-collapse collapse" data-bs-parent="#troubleshootingAccordion">
+                <div class="accordion-body">
+                  <ul>
+                    <li>You don't have admin role</li>
+                    <li>Ask your administrator to create your account with Admin role</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            <!-- Issue 3 -->
+            <div class="accordion-item">
+              <h2 class="accordion-header">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#issue3">
+                  <strong>Access denied - Capture Manager required</strong>
+                </button>
+              </h2>
+              <div id="issue3" class="accordion-collapse collapse" data-bs-parent="#troubleshootingAccordion">
+                <div class="accordion-body">
+                  <ul>
+                    <li>You need to be elevated to Capture Manager role</li>
+                    <li>Ask your admin to promote your account</li>
+                    <li>After elevation, refresh the page to see Capture Planning in navigation</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            <!-- Issue 4 -->
+            <div class="accordion-item">
+              <h2 class="accordion-header">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#issue4">
+                  <strong>User account is locked</strong>
+                </button>
+              </h2>
+              <div id="issue4" class="accordion-collapse collapse" data-bs-parent="#troubleshootingAccordion">
+                <div class="accordion-body">
+                  <ol>
+                    <li>Log in as admin</li>
+                    <li>Go to Admin → Users</li>
+                    <li>Find the locked user</li>
+                    <li>Click the unlock (🔓) button next to their name</li>
+                  </ol>
+                </div>
+              </div>
+            </div>
+
+            <!-- Issue 5 -->
+            <div class="accordion-item">
+              <h2 class="accordion-header">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#issue5">
+                  <strong>Can't see "Capture Planning" in navigation</strong>
+                </button>
+              </h2>
+              <div id="issue5" class="accordion-collapse collapse" data-bs-parent="#troubleshootingAccordion">
+                <div class="accordion-body">
+                  <ul>
+                    <li>You need to be a Capture Manager</li>
+                    <li>Ask your admin to promote your account</li>
+                    <li>After elevation, refresh the page to see the new menu item</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            <!-- Issue 6 -->
+            <div class="accordion-item">
+              <h2 class="accordion-header">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#issue6">
+                  <strong>Can't see a project someone shared with me</strong>
+                </button>
+              </h2>
+              <div id="issue6" class="accordion-collapse collapse" data-bs-parent="#troubleshootingAccordion">
+                <div class="accordion-body">
+                  <ul>
+                    <li>Refresh the page</li>
+                    <li>Go to Projects in the sidebar</li>
+                    <li>The shared project should appear in your list</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            <!-- Issue 7 -->
+            <div class="accordion-item">
+              <h2 class="accordion-header">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#issue7">
+                  <strong>A comment didn't post</strong>
+                </button>
+              </h2>
+              <div id="issue7" class="accordion-collapse collapse" data-bs-parent="#troubleshootingAccordion">
+                <div class="accordion-body">
+                  <ul>
+                    <li>Check your internet connection</li>
+                    <li>Try refreshing the page</li>
+                    <li>Post your comment again</li>
+                    <li>If it still fails, contact your administrator</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Getting Help -->
+    <section id="getting-help" class="mb-4">
+      <div class="card">
+        <div class="card-header bg-light">
+          <h4 class="mb-0"><i class="bi bi-question-circle"></i> Getting Help</h4>
+        </div>
+        <div class="card-body">
+          <h5>Need More Information?</h5>
+          <ul>
+            <li>📖 See the main <strong>README.md</strong> for general app help</li>
+            <li>💬 Ask a team member who created the project</li>
+            <li>👨‍💼 Contact your CaptureIQ administrator for technical issues</li>
+          </ul>
+
+          <h5 class="mt-3">Report Issues</h5>
+          <p>Found a bug? Let us know:</p>
+          <ul>
+            <li>Note what happened and when</li>
+            <li>Share any error messages you see</li>
+            <li>Contact the CaptureIQ administrator</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Sidebar -->
+  <div class="col-lg-3">
+    <div class="card sticky-top" style="top: 1.5rem;">
+      <div class="card-header bg-light">
+        <h5 class="mb-0"><i class="bi bi-bookmark"></i> Quick Links</h5>
+      </div>
+      <div class="card-body">
+        <div class="list-group list-group-flush">
+          <a href="#getting-started" class="list-group-item list-group-item-action py-2">Getting Started</a>
+          <a href="#key-features" class="list-group-item list-group-item-action py-2">Key Features</a>
+          <a href="#common-tasks" class="list-group-item list-group-item-action py-2">Common Tasks</a>
+          <a href="#capture-planning" class="list-group-item list-group-item-action py-2">Capture Planning</a>
+          <a href="#collaboration" class="list-group-item list-group-item-action py-2">Collaboration</a>
+          <a href="#project-roles" class="list-group-item list-group-item-action py-2">Project Roles</a>
+          <a href="#workflows" class="list-group-item list-group-item-action py-2">Workflows</a>
+          <a href="#tips" class="list-group-item list-group-item-action py-2">Tips & Tricks</a>
+          <a href="#troubleshooting" class="list-group-item list-group-item-action py-2">Troubleshooting</a>
+          <a href="#status-indicators" class="list-group-item list-group-item-action py-2">Status Indicators</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick Tips Card -->
+    <div class="card mt-3">
+      <div class="card-header bg-info text-white">
+        <h6 class="mb-0"><i class="bi bi-info-circle"></i> Quick Tips</h6>
+      </div>
+      <div class="card-body small">
+        <p class="mb-2">
+          <strong>💡 Pro Tip:</strong> Use comments to keep your team in sync without back-and-forth emails.
+        </p>
+        <p class="mb-2">
+          <strong>📌 Remember:</strong> Only admins can create new users and elevate capture managers.
+        </p>
+        <p class="mb-0">
+          <strong>🔔 Stay Updated:</strong> Check your notifications regularly to catch team updates.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .accordion-button:not(.collapsed) {
+    background: rgba(13, 110, 253, 0.1);
+    color: #0d6efd;
+  }
+  .list-group-item-action:hover {
+    background: rgba(13, 110, 253, 0.1);
+  }
+  h5 { color: #212529; font-weight: 600; }
+  .card { box-shadow: 0 1px 4px rgba(0,0,0,.07); }
+  section { scroll-margin-top: 100px; }
+</style>
+
+{% endblock %}

@@ -57,6 +57,38 @@
 </div>
 
 <div class="row g-3">
+  <!-- Pending Invitations -->
+  {% if pending_invitations %}
+  <div class="col-12">
+    <div class="alert alert-info alert-dismissible fade show" role="alert">
+      <i class="bi bi-person-plus me-2"></i>
+      <strong>Pending Invitations:</strong> You have <strong>{{ pending_invitations|length }}</strong> pending project team invitation{{ 's' if pending_invitations|length != 1 else '' }}.
+      <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      <div class="mt-2">
+        {% for inv in pending_invitations %}
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <span class="text-muted" style="font-size:.85rem">
+            <strong>{{ inv.project_name }}</strong> — Invited by {{ inv.invited_by_username }}
+          </span>
+          <div class="ms-auto d-flex gap-2">
+            <form method="post" action="{{ url_for('accept_invitation', project_id=inv.project_id, invitation_id=inv.id) }}" class="d-inline">
+              <button type="submit" class="btn btn-xs btn-success" style="font-size:.75rem; padding:.25rem .5rem">
+                <i class="bi bi-check-lg"></i> Accept
+              </button>
+            </form>
+            <form method="post" action="{{ url_for('decline_invitation', project_id=inv.project_id, invitation_id=inv.id) }}" class="d-inline">
+              <button type="submit" class="btn btn-xs btn-outline-secondary" style="font-size:.75rem; padding:.25rem .5rem">
+                <i class="bi bi-x-lg"></i> Decline
+              </button>
+            </form>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   <!-- Top agencies -->
   <div class="col-md-5">
     <div class="card table-card">

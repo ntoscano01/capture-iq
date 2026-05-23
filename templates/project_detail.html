@@ -111,6 +111,38 @@
       </div>
     </div>
 
+    <!-- Team card -->
+    <div class="card mb-3" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07)">
+      <div class="card-header bg-white fw-semibold border-bottom d-flex align-items-center">
+        <i class="bi bi-people-fill text-primary me-2"></i> Project Team
+        <span class="badge bg-primary ms-2">{{ team_members|length }}</span>
+        <a href="{{ url_for('project_team', project_id=project.id) }}" class="ms-auto btn btn-sm btn-outline-secondary">
+          <i class="bi bi-person-plus"></i> Manage Team
+        </a>
+      </div>
+      <div class="card-body">
+        {% if team_members %}
+          <div class="d-flex flex-wrap gap-2 mb-3">
+            {% for member in team_members %}
+            <div class="d-flex align-items-center gap-2 px-3 py-2" style="background:#f8f9fa; border-radius:6px; font-size:.85rem">
+              <i class="bi bi-person-circle text-muted"></i>
+              <span class="fw-semibold">{{ member.username }}</span>
+              <span class="badge bg-secondary" style="font-size:.7rem">{{ member.role }}</span>
+            </div>
+            {% endfor %}
+          </div>
+          {% if pending_invitations %}
+          <div class="alert alert-warning py-2 px-3 mb-0" style="border-radius:6px; font-size:.85rem">
+            <i class="bi bi-clock-history me-2"></i>
+            <strong>{{ pending_invitations|length }}</strong> pending invitation{{ 's' if pending_invitations|length != 1 else '' }}
+          </div>
+          {% endif %}
+        {% else %}
+          <p class="text-muted mb-0 py-2">No team members yet.</p>
+        {% endif %}
+      </div>
+    </div>
+
     <!-- Checklist card -->
     <div class="card mb-3" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07)">
       <div class="card-header bg-white fw-semibold border-bottom d-flex align-items-center">
@@ -133,28 +165,91 @@
             {{ category }}
           </div>
           {% for item in items %}
-          <div class="d-flex align-items-center gap-2 py-1 border-bottom" style="border-color:#f0f0f0 !important">
-            <form method="post"
-                  action="{{ url_for('toggle_checklist', project_id=project.id, item_id=item.id) }}"
-                  class="mb-0">
-              <button type="submit"
-                      class="btn p-0 border-0"
-                      style="font-size:1.1rem; color:{{ '#198754' if item.completed else '#adb5bd' }}">
-                <i class="bi {{ 'bi-check-circle-fill' if item.completed else 'bi-circle' }}"></i>
+          <div class="border-bottom" style="border-color:#f0f0f0 !important">
+            <div class="d-flex align-items-center gap-2 py-1">
+              <form method="post"
+                    action="{{ url_for('toggle_checklist', project_id=project.id, item_id=item.id) }}"
+                    class="mb-0">
+                <button type="submit"
+                        class="btn p-0 border-0"
+                        style="font-size:1.1rem; color:{{ '#198754' if item.completed else '#adb5bd' }}">
+                  <i class="bi {{ 'bi-check-circle-fill' if item.completed else 'bi-circle' }}"></i>
+                </button>
+              </form>
+              <span class="{{ 'text-decoration-line-through text-muted' if item.completed else '' }}"
+                    style="font-size:.87rem; flex:1">
+                {{ item.label }}
+              </span>
+              <!-- Schedule meta -->
+              {% if item.assignee_name or item.start_date or item.end_date %}
+              <span class="text-muted" style="font-size:.73rem; white-space:nowrap">
+                {% if item.assignee_name %}<i class="bi bi-person me-1"></i>{{ item.assignee_name }}{% endif %}
+                {% if item.start_date %}· {{ item.start_date }}{% endif %}
+                {% if item.end_date %}→ {{ item.end_date }}{% endif %}
+                {% if item.estimated_hours and item.estimated_hours > 0 %}· {{ item.estimated_hours }}h est{% endif %}
+              </span>
+              {% endif %}
+              <button class="btn btn-link btn-sm p-0 text-muted"
+                      style="font-size:.78rem"
+                      onclick="toggleSchedule('sched-{{ item.id }}')"
+                      title="Set schedule">
+                <i class="bi bi-calendar3"></i>
               </button>
-            </form>
-            <span class="{{ 'text-decoration-line-through text-muted' if item.completed else '' }}"
-                  style="font-size:.87rem; flex:1">
-              {{ item.label }}
-            </span>
-            <form method="post"
-                  action="{{ url_for('delete_checklist_item', project_id=project.id, item_id=item.id) }}"
-                  class="mb-0"
-                  onsubmit="return confirm('Remove this checklist item?')">
-              <button type="submit" class="btn p-0 border-0 text-muted" style="font-size:.8rem" title="Remove">
-                <i class="bi bi-x"></i>
-              </button>
-            </form>
+              <form method="post"
+                    action="{{ url_for('delete_checklist_item', project_id=project.id, item_id=item.id) }}"
+                    class="mb-0"
+                    onsubmit="return confirm('Remove this checklist item?')">
+                <button type="submit" class="btn p-0 border-0 text-muted" style="font-size:.8rem" title="Remove">
+                  <i class="bi bi-x"></i>
+                </button>
+              </form>
+            </div>
+            <!-- Inline schedule form (collapsed by default) -->
+            <div id="sched-{{ item.id }}" style="display:none; background:#f8f9fa; padding:.5rem .75rem; border-top:1px solid #f0f0f0">
+              <form method="post"
+                    action="{{ url_for('update_checklist_schedule', project_id=project.id, item_id=item.id) }}"
+                    class="row g-2 align-items-end">
+                <div class="col-auto">
+                  <label class="form-label mb-1" style="font-size:.72rem; font-weight:600">Assigned To</label>
+                  <select name="assigned_to_id" class="form-select form-select-sm" style="width:140px">
+                    <option value="">— None —</option>
+                    {% for u in all_users %}
+                      {% if u.is_active %}
+                        <option value="{{ u.id }}"
+                          {{ 'selected' if item.assigned_to_id == u.id }}>{{ u.username }}</option>
+                      {% endif %}
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-auto">
+                  <label class="form-label mb-1" style="font-size:.72rem; font-weight:600">Start</label>
+                  <input type="date" name="start_date" class="form-control form-control-sm"
+                         value="{{ item.start_date or '' }}" style="width:130px">
+                </div>
+                <div class="col-auto">
+                  <label class="form-label mb-1" style="font-size:.72rem; font-weight:600">End</label>
+                  <input type="date" name="end_date" class="form-control form-control-sm"
+                         value="{{ item.end_date or '' }}" style="width:130px">
+                </div>
+                <div class="col-auto">
+                  <label class="form-label mb-1" style="font-size:.72rem; font-weight:600">Est. Hours</label>
+                  <input type="number" name="estimated_hours" step="0.5" min="0"
+                         class="form-control form-control-sm" style="width:80px"
+                         value="{{ item.estimated_hours or '' }}">
+                </div>
+                <div class="col-auto">
+                  <label class="form-label mb-1" style="font-size:.72rem; font-weight:600">Act. Hours</label>
+                  <input type="number" name="actual_hours" step="0.5" min="0"
+                         class="form-control form-control-sm" style="width:80px"
+                         value="{{ item.actual_hours or '' }}">
+                </div>
+                <div class="col-auto">
+                  <button type="submit" class="btn btn-primary btn-sm">Save</button>
+                  <button type="button" class="btn btn-outline-secondary btn-sm"
+                          onclick="toggleSchedule('sched-{{ item.id }}')">Cancel</button>
+                </div>
+              </form>
+            </div>
           </div>
           {% endfor %}
         </div>
@@ -307,6 +402,45 @@
   </div><!-- /right column -->
 </div><!-- /row -->
 
+<!-- ── Schedule / Gantt Chart ─────────────────────────────────────────────────── -->
+{% if gantt_items %}
+<div class="card mb-3 mt-3" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07)">
+  <div class="card-header bg-white fw-semibold border-bottom d-flex align-items-center">
+    <i class="bi bi-bar-chart-steps text-primary me-2"></i> Project Schedule (Gantt)
+    <span class="text-muted fw-normal ms-2" style="font-size:.75rem">
+      — {{ gantt_items|length }} scheduled task{{ 's' if gantt_items|length != 1 }}
+    </span>
+  </div>
+  <div class="card-body p-3">
+    <div id="ganttChart" style="overflow-x:auto; min-height:160px"></div>
+  </div>
+</div>
+{% endif %}
+
+<!-- ── Pending Invitation Alert (if user has pending invitation) ───────────────── -->
+{% if project.id in user_pending_invitations %}
+<div class="alert alert-info alert-dismissible fade show mb-3" role="alert">
+  <i class="bi bi-info-circle me-2"></i>
+  <strong>Invitation Pending:</strong> You have been invited to join this project team.
+  <div class="mt-2 d-flex gap-2">
+    <form method="post" action="{{ url_for('accept_invitation', project_id=project.id, invitation_id=user_pending_invitations[project.id]) }}" class="d-inline">
+      <button type="submit" class="btn btn-sm btn-success">
+        <i class="bi bi-check-lg"></i> Accept
+      </button>
+    </form>
+    <form method="post" action="{{ url_for('decline_invitation', project_id=project.id, invitation_id=user_pending_invitations[project.id]) }}" class="d-inline">
+      <button type="submit" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-x-lg"></i> Decline
+      </button>
+    </form>
+  </div>
+  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<!-- ── Comments & Team Section ───────────────────────────────────────────────── -->
+{% include "_project_comments.html" %}
+
 <!-- ── Edit Project Modal ─────────────────────────────────────────────────── -->
 <div class="modal fade" id="editProjectModal" tabindex="-1">
   <div class="modal-dialog modal-lg">
@@ -377,4 +511,122 @@
   }
   .stage-connector.done { background: #198754; }
 </style>
+
+<script>
+// ── Checklist schedule toggle ──────────────────────────────────────────────────
+function toggleSchedule(id) {
+  const el = document.getElementById(id);
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+// ── Gantt chart (pure JS/HTML, no library) ────────────────────────────────────
+(function () {
+  const container = document.getElementById('ganttChart');
+  if (!container) return;
+
+  const rawItems = {{ gantt_items | tojson }};
+  if (!rawItems || rawItems.length === 0) return;
+
+  const PALETTE = [
+    '#003087','#2e86de','#1dd1a1','#f0932b','#6f42c1',
+    '#eb4d4b','#10ac84','#54a0ff','#f9ca24','#e056fd',
+  ];
+  const ROW_H   = 34;
+  const LABEL_W = 200;
+  const PAD     = 12;
+
+  // Compute date range
+  const allDates = rawItems.flatMap(r => [r.start_date, r.end_date]).filter(Boolean);
+  if (!allDates.length) return;
+  const minDate = new Date(allDates.reduce((a, b) => a < b ? a : b));
+  const maxDate = new Date(allDates.reduce((a, b) => a > b ? a : b));
+  // Pad by a few days
+  minDate.setDate(minDate.getDate() - 2);
+  maxDate.setDate(maxDate.getDate() + 3);
+  const totalDays = Math.max(1, (maxDate - minDate) / 86400000);
+
+  const chartW = Math.max(600, container.clientWidth - LABEL_W - PAD * 2);
+  const totalH = rawItems.length * ROW_H + 40;
+
+  // Build week headers
+  const weeks = [];
+  const cursor = new Date(minDate);
+  while (cursor <= maxDate) {
+    weeks.push(new Date(cursor));
+    cursor.setDate(cursor.getDate() + 7);
+  }
+
+  function dateToX(dateStr) {
+    const d = new Date(dateStr);
+    return ((d - minDate) / 86400000) / totalDays * chartW;
+  }
+
+  function fmtDate(d) {
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg"
+    width="${LABEL_W + chartW + PAD}" height="${totalH}"
+    style="font-family:system-ui,-apple-system,sans-serif; font-size:11px">`;
+
+  // Background stripes for weekends / alternating rows
+  rawItems.forEach((_, i) => {
+    const y = i * ROW_H + 28;
+    const fill = i % 2 === 0 ? '#f8f9fa' : '#ffffff';
+    svg += `<rect x="0" y="${y}" width="${LABEL_W + chartW + PAD}" height="${ROW_H}" fill="${fill}"/>`;
+  });
+
+  // Week grid lines
+  weeks.forEach(wk => {
+    const x = LABEL_W + PAD + dateToX(wk.toISOString().slice(0,10));
+    svg += `<line x1="${x}" y1="22" x2="${x}" y2="${totalH}" stroke="#dee2e6" stroke-width="1"/>`;
+    svg += `<text x="${x + 3}" y="18" fill="#6c757d" font-size="9">${fmtDate(wk)}</text>`;
+  });
+
+  // Today marker
+  const todayStr = new Date().toISOString().slice(0,10);
+  const todayX = LABEL_W + PAD + dateToX(todayStr);
+  svg += `<line x1="${todayX}" y1="22" x2="${todayX}" y2="${totalH}"
+    stroke="#dc3545" stroke-width="1.5" stroke-dasharray="4 2"/>`;
+  svg += `<text x="${todayX + 3}" y="18" fill="#dc3545" font-size="9" font-weight="600">Today</text>`;
+
+  // Bars
+  rawItems.forEach((item, i) => {
+    const y     = i * ROW_H + 28;
+    const x0    = LABEL_W + PAD + dateToX(item.start_date);
+    const x1    = LABEL_W + PAD + dateToX(item.end_date);
+    const barW  = Math.max(4, x1 - x0);
+    const color = PALETTE[i % PALETTE.length];
+    const done  = item.completed ? 1 : 0;
+
+    // Label column
+    const label = item.label.length > 26 ? item.label.slice(0, 25) + '…' : item.label;
+    svg += `<text x="${LABEL_W - 6}" y="${y + ROW_H / 2 + 4}"
+      text-anchor="end" fill="${done ? '#adb5bd' : '#212529'}"
+      font-size="11" ${done ? 'text-decoration="line-through"' : ''}>
+      ${label.replace(/&/g,'&amp;').replace(/</g,'&lt;')}
+    </text>`;
+
+    // Bar
+    svg += `<rect x="${x0}" y="${y + 6}" width="${barW}" height="${ROW_H - 12}"
+      fill="${color}" opacity="${done ? 0.35 : 0.85}" rx="3"/>`;
+
+    // Assignee label inside bar
+    if (item.assignee_name && barW > 40) {
+      const aname = item.assignee_name.length > 10 ? item.assignee_name.slice(0,9)+'…' : item.assignee_name;
+      svg += `<text x="${x0 + 5}" y="${y + ROW_H / 2 + 4}"
+        fill="#fff" font-size="9" font-weight="600">${aname}</text>`;
+    }
+
+    // Hours bubble
+    if (item.estimated_hours > 0) {
+      svg += `<text x="${x1 + 4}" y="${y + ROW_H / 2 + 4}"
+        fill="#6c757d" font-size="9">${item.estimated_hours}h</text>`;
+    }
+  });
+
+  svg += '</svg>';
+  container.innerHTML = svg;
+})();
+</script>
 {% endblock %}

@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+
+{% block title %}Capture Plans — CaptureIQ{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <i class="bi bi-bullseye text-primary fs-5"></i>
+  <h1>Capture Plans</h1>
+  {% set total_plans = 0 %}
+  {% for stage, plans in plans_by_stage.items() %}
+    {% set total_plans = total_plans + plans|length %}
+  {% endfor %}
+  <span class="badge bg-secondary ms-2">{{ total_plans }} active</span>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col">
+    <a href="{{ url_for('create_capture_plan') }}" class="btn btn-primary">
+      <i class="bi bi-plus-circle"></i> Create Capture Plan
+    </a>
+  </div>
+</div>
+
+{% set stage_order = ['pre-release', 'rfp-released', 'proposal-submitted', 'won', 'lost'] %}
+{% for stage in stage_order %}
+  {% set plans = plans_by_stage.get(stage, []) %}
+  <div class="row mb-4">
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header bg-light">
+          <h5 class="mb-0">
+            {% if stage == 'pre-release' %}
+              <i class="bi bi-clock-history"></i> Pre-Release
+            {% elif stage == 'rfp-released' %}
+              <i class="bi bi-envelope-open"></i> RFP Released
+            {% elif stage == 'proposal-submitted' %}
+              <i class="bi bi-check-circle"></i> Proposal Submitted
+            {% elif stage == 'won' %}
+              <i class="bi bi-trophy" style="color: #ffc107;"></i> Won
+            {% elif stage == 'lost' %}
+              <i class="bi bi-x-circle"></i> Lost
+            {% endif %}
+            <span class="ms-2">{{ stage|title|replace('-', ' ') }}</span>
+            <span class="badge bg-secondary ms-2">{{ plans|length }}</span>
+          </h5>
+        </div>
+        <div class="card-body">
+          {% if plans %}
+            <div class="row g-3">
+              {% for plan in plans %}
+              <div class="col-md-6 col-lg-4">
+                <a href="{{ url_for('capture_plan_detail', plan_id=plan['id']) }}" class="card h-100 text-decoration-none text-dark" style="transition: box-shadow 0.2s; border-left: 4px solid #0d6efd;">
+                  <div class="card-body">
+                    <h6 class="card-title mb-2">{{ plan['capture_name'] }}</h6>
+                    {% if plan['customer_name'] %}
+                      <p class="card-text text-muted mb-1" style="font-size: 0.85rem">
+                        <i class="bi bi-building"></i> {{ plan['customer_name'] }}
+                      </p>
+                    {% endif %}
+                    {% if plan['proposal_due_date'] %}
+                      <p class="card-text text-muted mb-2" style="font-size: 0.85rem">
+                        <i class="bi bi-calendar2-event"></i>
+                        {{ plan['proposal_due_date'][:10] if plan['proposal_due_date'] else '—' }}
+                      </p>
+                    {% endif %}
+                    <div class="d-flex justify-content-between align-items-start mt-3 pt-2" style="border-top: 1px solid #eee;">
+                      <small>
+                        <span class="badge" style="background: {% if plan['confidence_level'] == 'high' %}#198754{% elif plan['confidence_level'] == 'medium' %}#fd7e14{% else %}#dc3545{% endif %}">
+                          {{ plan['confidence_level']|title if plan['confidence_level'] else 'Medium' }}
+                        </span>
+                      </small>
+                      <small class="text-muted">
+                        {% if plan['win_probability'] %}
+                          {{ plan['win_probability'] }}% win
+                        {% endif %}
+                      </small>
+                    </div>
+                  </div>
+                </a>
+              </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <p class="text-muted mb-0">No capture plans at this stage</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+{% endfor %}
+
+<style>
+  .card:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important;
+    transform: translateY(-2px);
+  }
+</style>
+{% endblock %}

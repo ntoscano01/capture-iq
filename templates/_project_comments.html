@@ -1,0 +1,186 @@
+<!-- Project Comments Section -->
+<div class="card mb-3" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07)">
+  <div class="card-header bg-white fw-semibold border-bottom d-flex align-items-center">
+    <i class="bi bi-chat-left-text text-primary me-2"></i> Team Comments
+  </div>
+  <div class="card-body">
+    <!-- Add Comment Form -->
+    <form method="post" action="{{ url_for('add_comment', project_id=project.id) }}" class="mb-4">
+      <div class="form-group mb-2">
+        <textarea name="comment_text" class="form-control" placeholder="Add a comment..." rows="3" required></textarea>
+      </div>
+      <button type="submit" class="btn btn-primary btn-sm">
+        <i class="bi bi-chat-left-text me-1"></i> Post Comment
+      </button>
+    </form>
+
+    <!-- Comments List -->
+    {% if comments %}
+    <div class="comments-section" style="max-height: 500px; overflow-y: auto;">
+      {% for comment in comments %}
+      <div class="mb-3 pb-3 border-bottom" style="border-bottom: 1px solid #e9ecef !important">
+        <div class="d-flex gap-2 mb-2">
+          <div class="fw-semibold" style="color: var(--navy)">{{ comment.username }}</div>
+          <div style="font-size:.85rem; color:#6c757d">
+            {{ comment.created_at[:10] }}
+            {% if comment.updated_at != comment.created_at %}
+            <span title="Edited on {{ comment.updated_at[:10] }}"> (edited)</span>
+            {% endif %}
+          </div>
+          {% if comment.user_id == current_user.id or user_role == 'owner' %}
+          <form method="post"
+                action="{{ url_for('delete_comment', project_id=project.id, comment_id=comment.id) }}"
+                style="display:inline; margin-left: auto;">
+            <button type="submit" class="btn btn-link btn-sm text-danger p-0"
+                    onclick="return confirm('Delete this comment?')" title="Delete comment">
+              <i class="bi bi-trash3"></i>
+            </button>
+          </form>
+          {% endif %}
+        </div>
+        <div style="color: #333; line-height: 1.5">{{ comment.comment_text }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="alert alert-info alert-sm mb-0" role="alert" style="font-size:.9rem">
+      <i class="bi bi-info-circle me-1"></i> No comments yet. Start a discussion with your team!
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Shared Documents Section -->
+{% set shared_docs = shared_documents if shared_documents else [] %}
+<div class="card mb-3" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07)">
+  <div class="card-header bg-white fw-semibold border-bottom d-flex align-items-center">
+    <i class="bi bi-link-45deg text-primary me-2"></i> Shared Documents
+    {% if user_role in ['owner', 'editor'] %}
+    <button class="btn btn-sm btn-outline-primary ms-auto" data-bs-toggle="modal" data-bs-target="#linkDocumentModal">
+      <i class="bi bi-plus me-1"></i> Link Document
+    </button>
+    {% endif %}
+  </div>
+  <div class="card-body">
+    {% if shared_docs %}
+    <div class="list-group list-group-flush">
+      {% for doc in shared_docs %}
+      <div class="list-group-item py-2 px-0 d-flex align-items-center justify-content-between">
+        <div class="flex-grow-1">
+          <a href="{{ doc.external_url }}" target="_blank" rel="noopener" class="text-decoration-none fw-semibold">
+            {{ doc.title or 'Untitled' }}
+            <i class="bi bi-box-arrow-up-right" style="font-size:.8rem; margin-left:2px"></i>
+          </a>
+          <div style="font-size:.8rem; color:#6c757d">
+            {{ doc.doc_type | upper }} · Added by {{ doc.username }} on {{ doc.added_at[:10] }}
+          </div>
+        </div>
+        {% if user_role in ['owner', 'editor'] %}
+        <form method="post"
+              action="{{ url_for('remove_document', project_id=project.id, doc_id=doc.id) }}"
+              style="display:inline">
+          <button type="submit" class="btn btn-link btn-sm text-danger p-0"
+                  onclick="return confirm('Remove this document link?')" title="Remove">
+            <i class="bi bi-trash3"></i>
+          </button>
+        </form>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="alert alert-info alert-sm mb-0" role="alert" style="font-size:.9rem">
+      <i class="bi bi-info-circle me-1"></i> No linked documents yet.
+      {% if user_role in ['owner', 'editor'] %}
+      <button class="btn btn-link btn-sm p-0" data-bs-toggle="modal" data-bs-target="#linkDocumentModal">
+        Add one
+      </button>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Team Members Section -->
+<div class="card mb-3" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07)">
+  <div class="card-header bg-white fw-semibold border-bottom d-flex align-items-center">
+    <i class="bi bi-people text-primary me-2"></i> Team Members
+    {% if user_role == 'owner' %}
+    <a href="{{ url_for('share_project', project_id=project.id) }}" class="btn btn-sm btn-outline-primary ms-auto">
+      <i class="bi bi-person-plus me-1"></i> Manage Access
+    </a>
+    {% endif %}
+  </div>
+  <div class="card-body">
+    {% if members %}
+    <div class="row g-2">
+      {% for member in members %}
+      <div class="col-md-6">
+        <div class="d-flex align-items-center p-2 rounded" style="background: #f8f9fa">
+          <div class="flex-grow-1">
+            <div class="fw-semibold" style="font-size:.9rem">{{ member.username }}</div>
+            <div style="font-size:.8rem; color:#6c757d">
+              {{ member.email or '—' }}
+            </div>
+          </div>
+          <span class="badge {% if member.role == 'editor' %}bg-primary{% else %}bg-secondary{% endif %}"
+                style="font-size:.75rem">
+            {{ member.role | capitalize }}
+          </span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="alert alert-info alert-sm mb-0" role="alert" style="font-size:.9rem">
+      <i class="bi bi-info-circle me-1"></i> This is a private project. {% if user_role == 'owner' %}<a href="{{ url_for('share_project', project_id=project.id) }}">Add team members</a> to collaborate.{% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Link Document Modal -->
+<div class="modal fade" id="linkDocumentModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="post" action="{{ url_for('link_document', project_id=project.id) }}">
+        <div class="modal-header" style="background:var(--navy); color:#fff">
+          <h5 class="modal-title"><i class="bi bi-link-45deg me-2"></i> Link Document</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label for="doc_type" class="form-label">Document Source</label>
+            <select name="doc_type" id="doc_type" class="form-select" required>
+              <option value="">— Select source —</option>
+              <option value="sharepoint">SharePoint</option>
+              <option value="gdrive">Google Drive</option>
+              <option value="other">Other URL</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label for="external_url" class="form-label">Document URL</label>
+            <input type="url" name="external_url" id="external_url" class="form-control"
+                   placeholder="https://..." required>
+            <small class="text-muted d-block mt-1">Paste the full link to the document</small>
+          </div>
+          <div class="mb-3">
+            <label for="title" class="form-label">Document Title (optional)</label>
+            <input type="text" name="title" id="title" class="form-control"
+                   placeholder="e.g., Technical Proposal V1">
+          </div>
+          <div class="mb-3">
+            <label for="external_id" class="form-label">Document ID (optional)</label>
+            <input type="text" name="external_id" id="external_id" class="form-control"
+                   placeholder="For internal tracking">
+            <small class="text-muted d-block mt-1">SharePoint/Drive item ID if available</small>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary"><i class="bi bi-plus me-1"></i> Link Document</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>

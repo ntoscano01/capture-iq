@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Share Project — SBIR Capture{% endblock %}
+
+{% block content %}
+
+<div class="topbar">
+  <a href="{{ url_for('projects') }}" class="text-muted text-decoration-none">
+    <i class="bi bi-folder2-open"></i> Projects
+  </a>
+  <i class="bi bi-chevron-right text-muted" style="font-size:.8rem"></i>
+  <a href="{{ url_for('project_detail', project_id=project.id) }}" class="text-muted text-decoration-none">
+    {{ project.name }}
+  </a>
+  <i class="bi bi-chevron-right text-muted" style="font-size:.8rem"></i>
+  <h1>Team Access</h1>
+</div>
+
+<!-- Share Project Card -->
+<div class="card mb-4" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07)">
+  <div class="card-header bg-white fw-semibold border-bottom d-flex align-items-center">
+    <i class="bi bi-person-plus text-primary me-2"></i> Add Team Member
+  </div>
+  <div class="card-body">
+    <form method="post" action="{{ url_for('share_project', project_id=project.id) }}" class="row g-3">
+      <div class="col-md-6">
+        <label for="user_id" class="form-label">Select User</label>
+        <select name="user_id" id="user_id" class="form-select" required>
+          <option value="">— Choose a user —</option>
+          {% for user in all_users %}
+          <option value="{{ user.id }}">{{ user.username }}{% if user.email %} ({{ user.email }}){% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-6">
+        <label for="role" class="form-label">Role</label>
+        <select name="role" id="role" class="form-select" required>
+          <option value="viewer" selected>Viewer (can view & comment)</option>
+          <option value="editor">Editor (can edit & comment)</option>
+        </select>
+        <small class="text-muted d-block mt-1">
+          <strong>Viewer:</strong> Can view project, files, and add comments<br>
+          <strong>Editor:</strong> Can edit project details, upload files, and comment
+        </small>
+      </div>
+      <div class="col-12">
+        <button type="submit" class="btn btn-primary">
+          <i class="bi bi-person-plus me-1"></i> Add Team Member
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Current Team Members -->
+<div class="card" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07)">
+  <div class="card-header bg-white fw-semibold border-bottom d-flex align-items-center">
+    <i class="bi bi-people text-primary me-2"></i> Team Members
+  </div>
+  <div class="card-body">
+    {% if members %}
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0">
+        <thead style="border-bottom: 2px solid #e9ecef">
+          <tr style="font-size:.85rem; color:#6c757d; text-transform:uppercase; letter-spacing:.06em">
+            <th>User</th>
+            <th>Role</th>
+            <th>Added</th>
+            <th style="width:120px">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for member in members %}
+          <tr>
+            <td>
+              <div class="fw-semibold">{{ member.username }}</div>
+              <div style="font-size:.85rem; color:#6c757d">{{ member.email or '—' }}</div>
+            </td>
+            <td>
+              <span class="badge {% if member.role == 'editor' %}bg-primary{% else %}bg-secondary{% endif %}">
+                {{ member.role | capitalize }}
+              </span>
+            </td>
+            <td style="font-size:.85rem; color:#6c757d">
+              {{ member.added_at[:10] if member.added_at else '—' }}
+            </td>
+            <td>
+              <form method="post" action="{{ url_for('remove_project_member', project_id=project.id, user_id=member.user_id) }}"
+                    style="display:inline"
+                    onsubmit="return confirm('Remove this team member?')">
+                <button type="submit" class="btn btn-sm btn-outline-danger">
+                  <i class="bi bi-trash3"></i>
+                </button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="alert alert-info mb-0" role="alert">
+      <i class="bi bi-info-circle me-2"></i> No team members yet. Add someone to start collaborating!
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}

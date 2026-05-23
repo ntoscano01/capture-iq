@@ -8,7 +8,8 @@ import threading
 from datetime import datetime
 import csv
 import io
-from flask import Flask, render_template, request, redirect, url_for, jsonify, flash, Response, send_file
+from functools import wraps
+from flask import Flask, render_template, request, redirect, url_for, jsonify, flash, Response, send_file, abort
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
@@ -21,6 +22,11 @@ os.environ.setdefault("OAUTHLIB_INSECURE_TRANSPORT", "1")
 app = Flask(__name__)
 app.secret_key = os.environ.get("CAPTUREIQ_SECRET_KEY", "captureiq-local-secret-change-me")
 
+# Session configuration
+app.config['SESSION_COOKIE_SECURE'] = False  # Set to True in production (HTTPS only)
+app.config['SESSION_COOKIE_HTTPONLY'] = True  # Prevent JavaScript access to session cookie
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # CSRF protection
+
 # ── Flask-Login setup ─────────────────────────────────────────────────────────
 
 login_manager = LoginManager(app)
@@ -30,12 +36,13 @@ login_manager.login_message_category = "warning"
 
 
 class User(UserMixin):
-    def __init__(self, id, username, email, role, is_active=True):
+    def __init__(self, id, username, email, role, is_active=True, is_capture_manager=False):
         self.id = id
         self.username = username
         self.email = email
         self.role = role
         self._active = bool(is_active)
+        self.is_capture_manager = bool(is_capture_manager)
 
     @property
     def is_active(self):
@@ -51,7 +58,7 @@ def load_user(user_id):
     row = db.get_user_by_id(int(user_id))
     if row:
         return User(row["id"], row["username"], row["email"],
-                    row["role"], row["is_active"])
+                    row["role"], row["is_active"], row.get("is_capture_manager", 0))
     return None
 
 # Track background ingestion jobs
@@ -104,6 +111,61 @@ app.jinja_env.globals.update(
     activity_color=_activity_color,
 )
 
+# ── Access Control Decorator ──────────────────────────────────────────────────────
+
+def require_project_access(required_role='viewer'):
+    """
+    Decorator to enforce project-level access control.
+    required_role can be 'viewer', 'editor', or 'owner'.
+    Roles inherit: owner > editor > viewer
+    """
+    def decorator(f):
+        @wraps(f)
+        @login_required
+        def decorated_function(project_id, *args, **kwargs):
+            project = db.get_project(project_id)
+            if not project:
+                abort(404)
+
+            # Check if current user is owner
+            user_role = db.get_project_member_role(project_id, current_user.id)
+            if user_role is None and project.get('owner_id') != current_user.id:
+                # User has no access
+                flash("You do not have access to this project.", "danger")
+                abort(403)
+
+            # Determine actual role
+            actual_role = user_role if user_role else 'owner'
+
+            # Check role level
+            role_levels = {'owner': 3, 'editor': 2, 'viewer': 1}
+            if role_levels.get(actual_role, 0) < role_levels.get(required_role, 0):
+                flash(f"You need {required_role} access to perform this action.", "danger")
+                abort(403)
+
+            # Store role in g for use in the route
+            from flask import g
+            g.project_user_role = actual_role
+
+            return f(project_id, *args, **kwargs)
+        return decorated_function
+    return decorator
+
+
+def require_capture_manager(f):
+    """
+    Decorator to enforce that only capture managers can access a route.
+    Also allows admins to access capture manager routes.
+    """
+    @wraps(f)
+    @login_required
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_capture_manager and not current_user.is_admin:
+            flash("You do not have permission to access capture management features.", "danger")
+            abort(403)
+        return f(*args, **kwargs)
+    return decorated_function
+
 
 @app.context_processor
 def inject_gdrive_status():
@@ -115,6 +177,22 @@ def inject_gdrive_status():
         }
     except Exception:
         return {"gdrive_connected": False, "gdrive_has_creds": False}
+
+
+@app.context_processor
+def inject_user_helpers():
+    """Inject helper functions for user role checking in templates."""
+    def user_is_capture_manager():
+        return current_user.is_capture_manager if current_user.is_authenticated else False
+
+    task_counts = None
+    if current_user.is_authenticated and not current_user.is_admin:
+        try:
+            task_counts = db.get_task_counts_for_user(current_user.id)
+        except Exception:
+            task_counts = {"active": 0, "overdue": 0}
+
+    return dict(user_is_capture_manager=user_is_capture_manager, task_counts=task_counts)
 
 # File upload configuration
 UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), "project_uploads")
@@ -161,6 +239,16 @@ _USER_ONLY_ENDPOINTS = {
     "set_project_stage", "delete_project",
     "upload_project_file", "download_project_file", "delete_project_file",
     "toggle_checklist", "add_checklist_item", "delete_checklist_item",
+    # Collaboration endpoints
+    "share_project", "remove_project_member", "update_member_role",
+    "add_comment", "delete_comment",
+    "get_notifications", "mark_notification_read", "mark_all_read", "notifications",
+    "link_document", "remove_document",
+    "gdrive_settings", "gdrive_connect", "gdrive_callback", "gdrive_disconnect",
+    "sharepoint_settings", "sharepoint_disconnect",
+    # Task management
+    "tasks", "create_task", "edit_task", "delete_task", "update_task_status",
+    "update_checklist_schedule",
 }
 
 # Endpoints that only admins can access
@@ -224,8 +312,8 @@ def login():
 
         if check_password_hash(row["password_hash"], password):
             user = User(row["id"], row["username"], row["email"],
-                        row["role"], row["is_active"])
-            login_user(user, remember=request.form.get("remember") == "1")
+                        row["role"], row["is_active"], row.get("is_capture_manager", 0))
+            login_user(user, remember=False)  # Sessions expire when browser closes
             db.reset_failed_login(row["id"])
             db.record_login(row["id"], ip)
             db.write_audit_log("LOGIN_SUCCESS", username=username, user_id=row["id"],
@@ -395,6 +483,151 @@ def admin_reset_password(user_id):
     return redirect(url_for("admin_users"))
 
 
+# ── Admin — Capture Manager Role Management ────────────────────────────────────
+
+@app.route("/admin/users/<int:user_id>/elevate-capture-manager", methods=["POST"])
+@login_required
+def elevate_capture_manager(user_id):
+    """Elevate a user to capture manager role (admin only)."""
+    if not current_user.is_admin:
+        if request.is_json:
+            return jsonify({'status': 'error', 'message': 'Admin access required'}), 403
+        flash("You do not have permission to perform this action.", "danger")
+        return redirect(url_for("dashboard"))
+
+    user_row = db.get_user_by_id(user_id)
+    if not user_row:
+        if request.is_json:
+            return jsonify({'status': 'error', 'message': 'User not found'}), 404
+        abort(404)
+
+    try:
+        # Get a database connection
+        conn = db.get_db()
+
+        # First try with is_capture_manager, if it fails, add the column
+        try:
+            conn.execute("UPDATE users SET is_capture_manager = 1 WHERE id = ?", (user_id,))
+            conn.commit()
+        except Exception as e:
+            if "no such column" in str(e):
+                # Column doesn't exist, add it
+                try:
+                    conn.execute("ALTER TABLE users ADD COLUMN is_capture_manager INTEGER DEFAULT 0")
+                    conn.commit()
+                except:
+                    pass  # Column may already exist from concurrent operation
+
+                conn.execute("UPDATE users SET is_capture_manager = 1 WHERE id = ?", (user_id,))
+                conn.commit()
+            else:
+                raise
+
+        # Log the change
+        reason = None
+        if request.is_json:
+            reason = request.json.get('reason', '') if request.json else ''
+        else:
+            reason = request.form.get('reason', '')
+
+        conn.execute(
+            """INSERT INTO role_change_history
+               (user_id, role_changed_to, changed_by_user_id, reason)
+               VALUES (?, ?, ?, ?)""",
+            (user_id, 'capture_manager', current_user.id, reason or 'Elevated to Capture Manager')
+        )
+        conn.commit()
+        conn.close()
+
+        db.write_audit_log("CAPTURE_MANAGER_ELEVATED",
+                           username=current_user.username, user_id=current_user.id,
+                           detail=f"Elevated '{user_row['username']}' to Capture Manager",
+                           ip_address=request.remote_addr)
+
+        if request.is_json:
+            return jsonify({'status': 'success', 'message': f'{user_row["username"]} is now a Capture Manager'})
+        else:
+            flash(f"{user_row['username']} is now a Capture Manager.", "success")
+            return redirect(url_for('admin_users'))
+
+    except Exception as e:
+        print(f"DEBUG: Elevation error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        if request.is_json:
+            return jsonify({'status': 'error', 'message': str(e)}), 500
+        else:
+            flash(f"Error elevating user: {str(e)}", "danger")
+            return redirect(url_for('admin_users'))
+
+
+@app.route("/admin/users/<int:user_id>/remove-capture-manager", methods=["POST"])
+@login_required
+def remove_capture_manager(user_id):
+    """Remove capture manager role from a user (admin only)."""
+    if not current_user.is_admin:
+        if request.is_json:
+            return jsonify({'status': 'error', 'message': 'Admin access required'}), 403
+        flash("You do not have permission to perform this action.", "danger")
+        return redirect(url_for("dashboard"))
+
+    user_row = db.get_user_by_id(user_id)
+    if not user_row:
+        if request.is_json:
+            return jsonify({'status': 'error', 'message': 'User not found'}), 404
+        abort(404)
+
+    try:
+        # Get a database connection
+        conn = db.get_db()
+
+        # First try with is_capture_manager, if it fails, add the column
+        try:
+            conn.execute("UPDATE users SET is_capture_manager = 0 WHERE id = ?", (user_id,))
+            conn.commit()
+        except Exception as e:
+            if "no such column" in str(e):
+                # Column doesn't exist, add it
+                try:
+                    conn.execute("ALTER TABLE users ADD COLUMN is_capture_manager INTEGER DEFAULT 0")
+                    conn.commit()
+                except:
+                    pass  # Column may already exist from concurrent operation
+
+                conn.execute("UPDATE users SET is_capture_manager = 0 WHERE id = ?", (user_id,))
+                conn.commit()
+            else:
+                raise
+
+        # Log the change
+        conn.execute(
+            """INSERT INTO role_change_history
+               (user_id, role_changed_to, changed_by_user_id, reason)
+               VALUES (?, ?, ?, ?)""",
+            (user_id, 'user', current_user.id, 'Capture manager role removed')
+        )
+        conn.commit()
+        conn.close()
+
+        db.write_audit_log("CAPTURE_MANAGER_REMOVED",
+                           username=current_user.username, user_id=current_user.id,
+                           detail=f"Removed Capture Manager role from '{user_row['username']}'",
+                           ip_address=request.remote_addr)
+
+        if request.is_json:
+            return jsonify({'status': 'success', 'message': f'{user_row["username"]} is no longer a Capture Manager'})
+        else:
+            flash(f"{user_row['username']} is no longer a Capture Manager.", "success")
+            return redirect(url_for('admin_users'))
+
+    except Exception as e:
+        if request.is_json:
+            return jsonify({'status': 'error', 'message': str(e)}), 500
+        else:
+            flash(f"Error removing capture manager: {str(e)}", "danger")
+            return redirect(url_for('admin_users'))
+
+
 # ── Admin — Audit Log ──────────────────────────────────────────────────────────
 
 @app.route("/admin/audit-log")
@@ -512,6 +745,13 @@ def admin_save_settings():
     return redirect(url_for("admin_settings"))
 
 
+@app.route("/help/user-guide")
+@login_required
+def user_guide():
+    """Display the user guide."""
+    return render_template("user_guide.html")
+
+
 # ── Dashboard ──────────────────────────────────────────────────────────────────
 
 @app.route("/")
@@ -519,8 +759,306 @@ def admin_save_settings():
 def dashboard():
     stats = db.get_stats(user_id=current_user.id)
     capture_stats = db.get_capture_stats()
+    pending_invitations = db.get_pending_invitations(current_user.id)
     return render_template("dashboard.html", stats=stats, jobs=_jobs,
-                           capture_stats=capture_stats)
+                           capture_stats=capture_stats,
+                           pending_invitations=pending_invitations)
+
+
+# ── Capture Management ─────────────────────────────────────────────────────────
+
+@app.route("/capture")
+@login_required
+@require_capture_manager
+def capture_dashboard():
+    """Capture manager dashboard - list all capture plans grouped by stage."""
+    plans = db.get_capture_plans_by_user(current_user.id, include_archived=False)
+
+    # Group by stage
+    by_stage = {}
+    for plan in plans:
+        stage = plan['stage'] or 'pre-release'
+        if stage not in by_stage:
+            by_stage[stage] = []
+        by_stage[stage].append(plan)
+
+    return render_template("capture/dashboard.html", plans_by_stage=by_stage)
+
+
+@app.route("/capture/create", methods=["GET", "POST"])
+@login_required
+@require_capture_manager
+def create_capture_plan():
+    """Create a new capture plan."""
+    if request.method == "GET":
+        # Get available topics for linking
+        topics = db.get_topics(limit=1000)
+        return render_template("capture/create_plan.html", topics=topics)
+
+    if request.method == "POST":
+        data = request.form if request.form else request.json
+
+        try:
+            plan_id = db.create_capture_plan(
+                capture_name=data.get("capture_name"),
+                capture_lead_id=current_user.id,
+                created_by_user_id=current_user.id,
+                solicitation_id=data.get("solicitation_id") or None,
+                customer_name=data.get("customer_name"),
+                customer_website=data.get("customer_website"),
+                estimated_release_date=data.get("estimated_release_date"),
+                proposal_due_date=data.get("proposal_due_date"),
+                target_contract_value=float(data.get("target_contract_value")) if data.get("target_contract_value") else None,
+                stage=data.get("stage", "pre-release"),
+                confidence_level=data.get("confidence_level", "medium"),
+                win_probability=int(data.get("win_probability", 50))
+            )
+
+            # Add creator as owner in access table
+            db.add_capture_plan_access(plan_id, current_user.id, "owner")
+
+            db.write_audit_log("CAPTURE_PLAN_CREATED",
+                             username=current_user.username, user_id=current_user.id,
+                             detail=f"Created capture plan '{data.get('capture_name')}'",
+                             ip_address=request.remote_addr)
+
+            flash(f"Capture plan created successfully.", "success")
+
+            if request.is_json:
+                return jsonify({"status": "success", "capture_plan_id": plan_id})
+            else:
+                return redirect(url_for("capture_plan_detail", plan_id=plan_id))
+
+        except Exception as e:
+            error_msg = f"Failed to create capture plan: {str(e)}"
+            if request.is_json:
+                return jsonify({"status": "error", "message": error_msg}), 400
+            else:
+                flash(error_msg, "danger")
+                return redirect(url_for("create_capture_plan"))
+
+
+@app.route("/capture/<int:plan_id>")
+@login_required
+@require_capture_manager
+def capture_plan_detail(plan_id):
+    """View a capture plan."""
+    plan = db.get_capture_plan(plan_id)
+
+    if not plan:
+        abort(404)
+
+    # Check access: must be lead, have explicit access, or be admin
+    if plan['capture_lead_id'] != current_user.id and not current_user.is_admin:
+        access = db.get_capture_plan_access(plan_id, current_user.id)
+        if not access:
+            abort(403)
+
+    # Get linked projects
+    linked_projects = db.get_projects_by_capture_plan(plan_id)
+
+    # Get team members
+    members = db.list_capture_plan_members(plan_id)
+
+    # Get solicitation details if linked
+    solicitation = None
+    if plan['solicitation_id']:
+        solicitation = db.get_topic(plan['solicitation_id'])
+
+    return render_template("capture/plan_detail.html",
+                         plan=plan,
+                         solicitation=solicitation,
+                         linked_projects=linked_projects,
+                         members=members,
+                         is_owner=plan['capture_lead_id'] == current_user.id or current_user.is_admin)
+
+
+@app.route("/capture/<int:plan_id>/edit", methods=["POST"])
+@login_required
+@require_capture_manager
+def edit_capture_plan(plan_id):
+    """Update a capture plan."""
+    plan = db.get_capture_plan(plan_id)
+
+    if not plan:
+        abort(404)
+
+    # Only owner or admin can edit
+    if plan['capture_lead_id'] != current_user.id and not current_user.is_admin:
+        abort(403)
+
+    data = request.form if request.form else request.json
+
+    try:
+        db.update_capture_plan(
+            plan_id,
+            capture_name=data.get("capture_name"),
+            customer_name=data.get("customer_name"),
+            customer_website=data.get("customer_website"),
+            estimated_release_date=data.get("estimated_release_date"),
+            proposal_due_date=data.get("proposal_due_date"),
+            target_contract_value=float(data.get("target_contract_value")) if data.get("target_contract_value") else None,
+            stage=data.get("stage"),
+            confidence_level=data.get("confidence_level"),
+            win_probability=int(data.get("win_probability")) if data.get("win_probability") else None
+        )
+
+        db.write_audit_log("CAPTURE_PLAN_UPDATED",
+                         username=current_user.username, user_id=current_user.id,
+                         detail=f"Updated capture plan '{plan['capture_name']}'",
+                         ip_address=request.remote_addr)
+
+        flash("Capture plan updated successfully.", "success")
+
+        if request.is_json:
+            return jsonify({"status": "success"})
+        else:
+            return redirect(url_for("capture_plan_detail", plan_id=plan_id))
+
+    except Exception as e:
+        error_msg = f"Failed to update capture plan: {str(e)}"
+        if request.is_json:
+            return jsonify({"status": "error", "message": error_msg}), 400
+        else:
+            flash(error_msg, "danger")
+            return redirect(url_for("capture_plan_detail", plan_id=plan_id))
+
+
+@app.route("/capture/<int:plan_id>/archive", methods=["POST"])
+@login_required
+@require_capture_manager
+def archive_capture_plan(plan_id):
+    """Archive a capture plan."""
+    plan = db.get_capture_plan(plan_id)
+
+    if not plan:
+        abort(404)
+
+    # Only owner or admin can archive
+    if plan['capture_lead_id'] != current_user.id and not current_user.is_admin:
+        abort(403)
+
+    db.update_capture_plan(plan_id, is_archived=1)
+
+    db.write_audit_log("CAPTURE_PLAN_ARCHIVED",
+                     username=current_user.username, user_id=current_user.id,
+                     detail=f"Archived capture plan '{plan['capture_name']}'",
+                     ip_address=request.remote_addr)
+
+    flash("Capture plan archived.", "success")
+    return redirect(url_for("capture_dashboard"))
+
+
+@app.route("/capture/<int:plan_id>/add-member", methods=["POST"])
+@login_required
+@require_capture_manager
+def add_capture_plan_member(plan_id):
+    """Add a team member to a capture plan."""
+    plan = db.get_capture_plan(plan_id)
+
+    if not plan:
+        abort(404)
+
+    # Only owner or admin can add members
+    if plan['capture_lead_id'] != current_user.id and not current_user.is_admin:
+        abort(403)
+
+    data = request.form if request.form else request.json
+    user_id = data.get("user_id")
+    access_level = data.get("access_level", "viewer")
+
+    user = db.get_user_by_id(user_id)
+    if not user:
+        return jsonify({"status": "error", "message": "User not found"}), 404
+
+    if db.add_capture_plan_access(plan_id, user_id, access_level):
+        db.write_audit_log("CAPTURE_PLAN_MEMBER_ADDED",
+                         username=current_user.username, user_id=current_user.id,
+                         detail=f"Added {user['username']} to capture plan '{plan['capture_name']}'",
+                         ip_address=request.remote_addr)
+
+        flash(f"{user['username']} added to capture plan.", "success")
+
+    if request.is_json:
+        return jsonify({"status": "success"})
+    else:
+        return redirect(url_for("capture_plan_detail", plan_id=plan_id))
+
+
+@app.route("/capture/<int:plan_id>/remove-member/<int:member_id>", methods=["POST"])
+@login_required
+@require_capture_manager
+def remove_capture_plan_member(plan_id, member_id):
+    """Remove a team member from a capture plan."""
+    plan = db.get_capture_plan(plan_id)
+
+    if not plan:
+        abort(404)
+
+    # Only owner or admin can remove members
+    if plan['capture_lead_id'] != current_user.id and not current_user.is_admin:
+        abort(403)
+
+    # Can't remove the owner
+    if member_id == plan['capture_lead_id']:
+        return jsonify({"status": "error", "message": "Cannot remove the capture lead"}), 403
+
+    user = db.get_user_by_id(member_id)
+
+    db.remove_capture_plan_access(plan_id, member_id)
+
+    db.write_audit_log("CAPTURE_PLAN_MEMBER_REMOVED",
+                     username=current_user.username, user_id=current_user.id,
+                     detail=f"Removed {user['username']} from capture plan '{plan['capture_name']}'",
+                     ip_address=request.remote_addr)
+
+    flash(f"{user['username']} removed from capture plan.", "success")
+
+    if request.is_json:
+        return jsonify({"status": "success"})
+    else:
+        return redirect(url_for("capture_plan_detail", plan_id=plan_id))
+
+
+@app.route("/project/<int:project_id>/link-capture-plan", methods=["POST"])
+@login_required
+def link_project_to_capture(project_id):
+    """Link a project to a capture plan."""
+    project = db.get_project(project_id)
+
+    if not project:
+        abort(404)
+
+    # User must have edit access to project
+    access = db.get_project_member_role(project_id, current_user.id)
+    if project['owner_id'] != current_user.id and access not in ['owner', 'editor'] and not current_user.is_admin:
+        abort(403)
+
+    data = request.form if request.form else request.json
+    capture_plan_id = data.get("capture_plan_id")
+
+    # Verify capture plan exists and user has access
+    plan = db.get_capture_plan(capture_plan_id)
+    if not plan:
+        return jsonify({"status": "error", "message": "Capture plan not found"}), 404
+
+    # Only capture managers can link projects to plans
+    if not current_user.is_capture_manager and not current_user.is_admin:
+        return jsonify({"status": "error", "message": "Only capture managers can link projects"}), 403
+
+    db.link_project_to_capture_plan(project_id, capture_plan_id)
+
+    db.write_audit_log("PROJECT_LINKED_TO_CAPTURE",
+                     username=current_user.username, user_id=current_user.id,
+                     detail=f"Linked project '{project['name']}' to capture plan '{plan['capture_name']}'",
+                     ip_address=request.remote_addr)
+
+    flash("Project linked to capture plan.", "success")
+
+    if request.is_json:
+        return jsonify({"status": "success"})
+    else:
+        return redirect(url_for("project_detail", project_id=project_id))
 
 
 # ── Solicitations ──────────────────────────────────────────────────────────────
@@ -1315,20 +1853,38 @@ def create_project():
         "checklist_type": request.form.get("checklist_type", "dod"),
         "source":         request.form.get("source", "").strip(),
     })
+
+    # Set the current user as the project owner
+    db.set_project_owner(project_id, current_user.id)
+
+    # Log the action
+    db.log_activity(project_id, "created", f"Project created by {current_user.username}")
+
     flash(f"Project '{name}' created.", "success")
     return redirect(url_for("project_detail", project_id=project_id))
 
 
 @app.route("/projects/<int:project_id>")
-@login_required
+@require_project_access(required_role='viewer')
 def project_detail(project_id: int):
+    from flask import g
     project = db.get_project(project_id)
     if not project:
         flash("Project not found.", "warning")
         return redirect(url_for("projects"))
+
     checklist = db.get_checklist(project_id)
     files     = db.get_project_files(project_id)
     activity  = db.get_activity_log(project_id)
+    members   = db.get_project_members(project_id)
+    comments  = db.get_project_comments(project_id)
+    shared_documents = db.get_shared_documents(project_id)
+    team_members = db.get_project_team_members(project_id)
+    pending_invitations = db.get_project_invitations(project_id, status='pending')
+
+    # Get user's pending invitations (for this project and others)
+    user_pending_invs = db.get_pending_invitations(current_user.id)
+    user_pending_invitations = {inv['project_id']: inv['id'] for inv in user_pending_invs}
 
     # Group checklist by category
     checklist_groups = {}
@@ -1336,12 +1892,24 @@ def project_detail(project_id: int):
         cat = item["category"] or "General"
         checklist_groups.setdefault(cat, []).append(item)
 
+    gantt_items  = db.get_checklist_items_for_gantt(project_id)
+    all_users    = db.get_all_users()
+
     return render_template("project_detail.html",
                            project=project,
                            checklist_groups=checklist_groups,
+                           gantt_items=gantt_items,
+                           all_users=all_users,
                            files=files,
                            activity=activity,
-                           stages=db.STAGES)
+                           stages=db.STAGES,
+                           members=members,
+                           comments=comments,
+                           shared_documents=shared_documents,
+                           user_role=g.project_user_role,
+                           team_members=team_members,
+                           pending_invitations=pending_invitations,
+                           user_pending_invitations=user_pending_invitations)
 
 
 @app.route("/projects/<int:project_id>/edit", methods=["POST"])
@@ -1368,7 +1936,7 @@ def set_project_stage(project_id: int):
 
 
 @app.route("/projects/<int:project_id>/delete", methods=["POST"])
-@login_required
+@require_project_access(required_role='owner')
 def delete_project(project_id: int):
     project = db.get_project(project_id)
     if project:
@@ -1376,13 +1944,174 @@ def delete_project(project_id: int):
         files = db.get_project_files(project_id)
         for f in files:
             try:
-                if os.path.exists(f["local_path"]):
+                if os.path.exists(f.get("local_path")):
                     os.remove(f["local_path"])
             except Exception:
                 pass
         db.delete_project(project_id)
+        db.log_activity(project_id, "deleted", f"Project deleted by {current_user.username}")
         flash(f"Project '{project['name']}' deleted.", "info")
     return redirect(url_for("projects"))
+
+
+# ── Project Sharing & Collaboration ────────────────────────────────────────────
+
+@app.route("/projects/<int:project_id>/share", methods=["GET", "POST"])
+@require_project_access(required_role='owner')
+def share_project(project_id: int):
+    """Manage project team members and permissions."""
+    project = db.get_project(project_id)
+    members = db.get_project_members(project_id)
+    all_users = db.get_all_users()
+
+    if request.method == "POST":
+        user_id = request.form.get("user_id")
+        role = request.form.get("role", "viewer")
+
+        if user_id and role in ['viewer', 'editor']:
+            try:
+                user_id = int(user_id)
+                db.add_project_member(project_id, user_id, role, current_user.id)
+                username = next((u['username'] for u in all_users if u['id'] == user_id), "User")
+                db.log_activity(project_id, "shared", f"{username} added with {role} role by {current_user.username}")
+
+                # Create notification
+                db.create_notification(user_id, 'share', project_id, current_user.id,
+                                     f"{current_user.username} shared project '{project['name']}' with you")
+
+                flash(f"User added to project with {role} access.", "success")
+            except Exception as e:
+                flash(f"Error adding user: {str(e)}", "danger")
+
+    return render_template("project_share.html",
+                          project=project,
+                          members=members,
+                          all_users=[u for u in all_users if u['id'] != project['owner_id']])
+
+
+@app.route("/projects/<int:project_id>/members/<int:user_id>/remove", methods=["POST"])
+@require_project_access(required_role='owner')
+def remove_project_member(project_id: int, user_id: int):
+    """Remove a user from a project."""
+    db.remove_project_member(project_id, user_id)
+    project = db.get_project(project_id)
+    user = db.get_user_by_id(user_id)
+    if user:
+        db.log_activity(project_id, "shared", f"{user['username']} removed from project by {current_user.username}")
+    flash("Team member removed.", "success")
+    return redirect(url_for("share_project", project_id=project_id))
+
+
+@app.route("/projects/<int:project_id>/members/<int:user_id>/role", methods=["POST"])
+@require_project_access(required_role='owner')
+def update_member_role(project_id: int, user_id: int):
+    """Update a team member's role in the project."""
+    role = request.form.get("role", "viewer")
+    if role in ['viewer', 'editor']:
+        db.update_project_member_role(project_id, user_id, role)
+        user = db.get_user_by_id(user_id)
+        if user:
+            db.log_activity(project_id, "shared", f"{user['username']} role updated to {role} by {current_user.username}")
+        flash(f"Role updated to {role}.", "success")
+    return redirect(url_for("share_project", project_id=project_id))
+
+
+# ── Project Comments ───────────────────────────────────────────────────────────
+
+@app.route("/projects/<int:project_id>/comments/add", methods=["POST"])
+@require_project_access(required_role='viewer')
+def add_comment(project_id: int):
+    """Add a comment to a project."""
+    comment_text = request.form.get("comment_text", "").strip()
+    file_id = request.form.get("file_id") or None
+    if file_id:
+        try:
+            file_id = int(file_id)
+        except (ValueError, TypeError):
+            file_id = None
+
+    if not comment_text:
+        flash("Comment cannot be empty.", "warning")
+        return redirect(url_for("project_detail", project_id=project_id))
+
+    comment_id = db.add_project_comment(project_id, current_user.id, comment_text, file_id)
+    project = db.get_project(project_id)
+
+    # Log and notify
+    db.log_activity(project_id, "note", f"Comment added by {current_user.username}")
+
+    # Notify other project members
+    members = db.get_project_members(project_id)
+    for member in members:
+        if member['user_id'] != current_user.id:
+            db.create_notification(member['user_id'], 'comment', project_id, current_user.id,
+                                 f"{current_user.username} commented on '{project['name']}'")
+
+    # Also notify project owner if current user isn't owner
+    if project.get('owner_id') and project['owner_id'] != current_user.id:
+        db.create_notification(project['owner_id'], 'comment', project_id, current_user.id,
+                             f"{current_user.username} commented on '{project['name']}'")
+
+    flash("Comment added.", "success")
+    return redirect(url_for("project_detail", project_id=project_id))
+
+
+@app.route("/projects/<int:project_id>/comments/<int:comment_id>/delete", methods=["POST"])
+@login_required
+def delete_comment(project_id: int, comment_id: int):
+    """Delete a comment (owner or author only)."""
+    # Check if user is comment author or project owner
+    comment = db.get_project_comment(comment_id)
+    project = db.get_project(project_id)
+
+    if not comment or comment.get('project_id') != project_id:
+        flash("Comment not found.", "warning")
+        return redirect(url_for("project_detail", project_id=project_id))
+
+    if comment.get('user_id') != current_user.id and project.get('owner_id') != current_user.id:
+        flash("You can only delete your own comments.", "danger")
+        return redirect(url_for("project_detail", project_id=project_id))
+
+    db.delete_comment(comment_id)
+    flash("Comment deleted.", "info")
+    return redirect(url_for("project_detail", project_id=project_id))
+
+
+# ── Notifications ──────────────────────────────────────────────────────────────
+
+@app.route("/api/notifications")
+@login_required
+def get_notifications():
+    """Get user's unread notifications (JSON API)."""
+    notifications = db.get_user_notifications(current_user.id, unread_only=True)
+    return jsonify(notifications)
+
+
+@app.route("/api/notifications/<int:notif_id>/read", methods=["POST"])
+@login_required
+def mark_notification_read(notif_id: int):
+    """Mark a notification as read."""
+    db.mark_notification_read(notif_id)
+    return jsonify({"success": True})
+
+
+@app.route("/api/notifications/mark-all-read", methods=["POST"])
+@login_required
+def mark_all_read():
+    """Mark all notifications as read."""
+    db.mark_all_notifications_read(current_user.id)
+    return jsonify({"success": True})
+
+
+@app.route("/notifications")
+@login_required
+def notifications():
+    """View all notifications."""
+    notifications = db.get_user_notifications(current_user.id)
+    unread_count = db.get_unread_notification_count(current_user.id)
+    return render_template("notifications.html",
+                          notifications=notifications,
+                          unread_count=unread_count)
 
 
 # ── SBIR Capture — Files ───────────────────────────────────────────────────────
@@ -1606,6 +2335,245 @@ def gdrive_disconnect():
     return redirect(url_for("gdrive_settings"))
 
 
+# ── SharePoint Settings ────────────────────────────────────────────────────────
+
+@app.route("/settings/sharepoint")
+@login_required
+def sharepoint_settings():
+    from integrations import sharepoint as sp
+    return render_template("sharepoint_settings.html",
+                          connected=sp.is_connected())
+
+
+@app.route("/settings/sharepoint/disconnect", methods=["POST"])
+@login_required
+def sharepoint_disconnect():
+    from integrations import sharepoint as sp
+    import os
+    try:
+        if os.path.exists(sp.SHAREPOINT_TOKEN_FILE):
+            os.remove(sp.SHAREPOINT_TOKEN_FILE)
+        flash("SharePoint disconnected.", "info")
+    except Exception as e:
+        flash(f"Error disconnecting: {e}", "danger")
+    return redirect(url_for("sharepoint_settings"))
+
+
+# ── Shared Documents ──────────────────────────────────────────────────────────
+
+@app.route("/projects/<int:project_id>/documents/link", methods=["POST"])
+@require_project_access(required_role='editor')
+def link_document(project_id: int):
+    """Link an external document (SharePoint/Drive) to a project."""
+    doc_type = request.form.get("doc_type", "").strip()
+    external_url = request.form.get("external_url", "").strip()
+    title = request.form.get("title", "").strip()
+    external_id = request.form.get("external_id", "").strip()
+
+    if not doc_type or not external_url:
+        flash("Document type and URL are required.", "warning")
+        return redirect(url_for("project_detail", project_id=project_id))
+
+    doc_id = db.add_shared_document(project_id, doc_type, external_url,
+                                   external_id, title, current_user.id)
+    project = db.get_project(project_id)
+    db.log_activity(project_id, "file_upload",
+                   f"{title or 'Document'} linked from {doc_type.upper()} by {current_user.username}")
+
+    flash(f"Document linked to project.", "success")
+    return redirect(url_for("project_detail", project_id=project_id))
+
+
+@app.route("/projects/<int:project_id>/documents/<int:doc_id>/remove", methods=["POST"])
+@require_project_access(required_role='editor')
+def remove_document(project_id: int, doc_id: int):
+    """Remove a document link from a project."""
+    docs = db.get_shared_documents(project_id)
+    doc = next((d for d in docs if d['id'] == doc_id), None)
+
+    if doc:
+        db.remove_shared_document(doc_id)
+        db.log_activity(project_id, "file_delete",
+                       f"Document '{doc['title']}' removed by {current_user.username}")
+        flash("Document removed.", "info")
+    else:
+        flash("Document not found.", "warning")
+
+    return redirect(url_for("project_detail", project_id=project_id))
+
+
+# ── Project Team Management ────────────────────────────────────────────────────
+
+@app.route("/projects/<int:project_id>/team", methods=["GET"])
+@login_required
+def project_team(project_id: int):
+    """View project team members and manage invitations."""
+    project = db.get_project(project_id)
+    if not project:
+        abort(404)
+
+    # Check access (project members or admins)
+    if not (db.is_project_team_member(project_id, current_user.id) or current_user.is_admin):
+        abort(403)
+
+    team_members = db.get_project_team_members(project_id)
+    pending_invitations = db.get_project_invitations(project_id, status='pending')
+
+    # Check if current user is project lead or admin (can manage team)
+    can_manage = (project.get('created_by_user_id') == current_user.id or
+                  current_user.is_admin)
+
+    return render_template("project_team.html",
+                         project=project,
+                         team_members=team_members,
+                         pending_invitations=pending_invitations,
+                         can_manage=can_manage)
+
+
+@app.route("/projects/<int:project_id>/team/invite", methods=["POST"])
+@login_required
+def invite_team_member(project_id: int):
+    """Send a team invitation to a user."""
+    project = db.get_project(project_id)
+    if not project:
+        abort(404)
+
+    # Check if user can manage team (project lead or admin)
+    if project.get('created_by_user_id') != current_user.id and not current_user.is_admin:
+        if request.is_json:
+            return jsonify({'status': 'error', 'message': 'Not authorized'}), 403
+        flash("You don't have permission to manage this team.", "danger")
+        return redirect(url_for("project_detail", project_id=project_id))
+
+    user_id = request.form.get('user_id') or (request.json.get('user_id') if request.is_json else None)
+
+    if not user_id:
+        if request.is_json:
+            return jsonify({'status': 'error', 'message': 'User ID required'}), 400
+        flash("User not specified.", "warning")
+        return redirect(url_for("project_team", project_id=project_id))
+
+    user_id = int(user_id)
+    user = db.get_user_by_id(user_id)
+    if not user:
+        if request.is_json:
+            return jsonify({'status': 'error', 'message': 'User not found'}), 404
+        flash("User not found.", "warning")
+        return redirect(url_for("project_team", project_id=project_id))
+
+    # Check if already on team
+    if db.is_project_team_member(project_id, user_id):
+        if request.is_json:
+            return jsonify({'status': 'error', 'message': 'Already on team'}), 400
+        flash(f"{user['username']} is already on this team.", "info")
+        return redirect(url_for("project_team", project_id=project_id))
+
+    # Send invitation
+    if db.send_team_invitation(project_id, user_id, current_user.id):
+        db.write_audit_log("PROJECT_INVITATION_SENT",
+                          username=current_user.username, user_id=current_user.id,
+                          detail=f"Invited '{user['username']}' to project '{project['name']}'",
+                          ip_address=request.remote_addr)
+
+        if request.is_json:
+            return jsonify({'status': 'success', 'message': f'Invitation sent to {user["username"]}'})
+        flash(f"Invitation sent to {user['username']}.", "success")
+    else:
+        if request.is_json:
+            return jsonify({'status': 'error', 'message': 'Failed to send invitation'}), 500
+        flash("Failed to send invitation.", "danger")
+
+    return redirect(url_for("project_team", project_id=project_id))
+
+
+@app.route("/projects/<int:project_id>/team/<int:user_id>/remove", methods=["POST"])
+@login_required
+def remove_team_member(project_id: int, user_id: int):
+    """Remove a user from project team."""
+    project = db.get_project(project_id)
+    if not project:
+        abort(404)
+
+    # Check if user can manage team
+    if project.get('created_by_user_id') != current_user.id and not current_user.is_admin:
+        if request.is_json:
+            return jsonify({'status': 'error', 'message': 'Not authorized'}), 403
+        flash("You don't have permission to manage this team.", "danger")
+        return redirect(url_for("project_detail", project_id=project_id))
+
+    user = db.get_user_by_id(user_id)
+    if not user:
+        if request.is_json:
+            return jsonify({'status': 'error', 'message': 'User not found'}), 404
+        abort(404)
+
+    if db.remove_team_member(project_id, user_id):
+        db.write_audit_log("PROJECT_MEMBER_REMOVED",
+                          username=current_user.username, user_id=current_user.id,
+                          detail=f"Removed '{user['username']}' from project '{project['name']}'",
+                          ip_address=request.remote_addr)
+
+        if request.is_json:
+            return jsonify({'status': 'success', 'message': f'{user["username"]} removed from team'})
+        flash(f"{user['username']} removed from team.", "success")
+    else:
+        if request.is_json:
+            return jsonify({'status': 'error', 'message': 'Failed to remove member'}), 500
+        flash("Failed to remove team member.", "danger")
+
+    return redirect(url_for("project_team", project_id=project_id))
+
+
+@app.route("/projects/<int:project_id>/invite/<int:invitation_id>/accept", methods=["POST"])
+@login_required
+def accept_invitation(project_id: int, invitation_id: int):
+    """Accept a team invitation."""
+    project = db.get_project(project_id)
+    if not project:
+        abort(404)
+
+    if db.accept_team_invitation(project_id, current_user.id):
+        db.write_audit_log("PROJECT_INVITATION_ACCEPTED",
+                          username=current_user.username, user_id=current_user.id,
+                          detail=f"Accepted invitation to project '{project['name']}'",
+                          ip_address=request.remote_addr)
+
+        if request.is_json:
+            return jsonify({'status': 'success', 'message': 'Invitation accepted'})
+        flash("You've joined the project team!", "success")
+    else:
+        if request.is_json:
+            return jsonify({'status': 'error', 'message': 'Failed to accept invitation'}), 500
+        flash("Failed to accept invitation.", "danger")
+
+    return redirect(url_for("project_detail", project_id=project_id))
+
+
+@app.route("/projects/<int:project_id>/invite/<int:invitation_id>/decline", methods=["POST"])
+@login_required
+def decline_invitation(project_id: int, invitation_id: int):
+    """Decline a team invitation."""
+    project = db.get_project(project_id)
+    if not project:
+        abort(404)
+
+    if db.decline_team_invitation(project_id, current_user.id):
+        db.write_audit_log("PROJECT_INVITATION_DECLINED",
+                          username=current_user.username, user_id=current_user.id,
+                          detail=f"Declined invitation to project '{project['name']}'",
+                          ip_address=request.remote_addr)
+
+        if request.is_json:
+            return jsonify({'status': 'success', 'message': 'Invitation declined'})
+        flash("You've declined the invitation.", "info")
+    else:
+        if request.is_json:
+            return jsonify({'status': 'error', 'message': 'Failed to decline invitation'}), 500
+        flash("Failed to decline invitation.", "danger")
+
+    return redirect(url_for("dashboard"))
+
+
 # ── API endpoints (JSON) ───────────────────────────────────────────────────────
 
 @app.route("/ingest-log/<int:log_id>/delete", methods=["POST"])
@@ -1613,6 +2581,37 @@ def gdrive_disconnect():
 def delete_ingest_log(log_id: int):
     db.delete_ingest_log(log_id)
     return redirect(url_for("ingest_page"))
+
+
+@app.route("/api/project/<int:project_id>/available-users")
+@login_required
+def api_available_users(project_id: int):
+    """Get users not on project team (for invitations)."""
+    project = db.get_project(project_id)
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
+
+    # Get all users
+    all_users = db.get_all_users()
+
+    # Get team members
+    team_members = db.get_project_team_members(project_id)
+    team_member_ids = {m['user_id'] for m in team_members}
+
+    # Get pending invitations
+    pending_invitations = db.get_project_invitations(project_id, status='pending')
+    pending_user_ids = {i['invited_user_id'] for i in pending_invitations}
+
+    # Filter out current user, team members, and already invited
+    available = [
+        {'id': u['id'], 'username': u['username'], 'email': u['email']}
+        for u in all_users
+        if u['id'] != current_user.id  # Not current user
+        and u['id'] not in team_member_ids  # Not already on team
+        and u['id'] not in pending_user_ids  # Not already invited
+    ]
+
+    return jsonify({'users': available})
 
 
 @app.route("/api/stats")
@@ -1656,3 +2655,371 @@ if __name__ == "__main__":
     print("  Open http://127.0.0.1:5000 in your browser")
     print("="*60 + "\n")
     app.run(debug=True, host="127.0.0.1", port=5000)
+
+
+# ── Proposal Scoring & Ranking ───────────────────────────────────────────────
+
+@app.route("/capture-plans/<int:plan_id>/scoring", methods=["GET"])
+@login_required
+@require_capture_manager
+def scoring_dashboard(plan_id: int):
+    """View scoring dashboard for a capture plan."""
+    plan = db.get_capture_plan(plan_id)
+    if not plan:
+        flash("Capture plan not found.", "warning")
+        return redirect(url_for("capture_dashboard"))
+    
+    criteria = db.get_scoring_criteria(plan_id)
+    progress = db.get_scoring_progress(plan_id)
+    rankings = db.get_capture_plan_rankings(plan_id)
+    
+    return render_template("scoring_dashboard.html",
+                          plan=plan,
+                          criteria=criteria,
+                          progress=progress,
+                          rankings=rankings)
+
+
+@app.route("/capture-plans/<int:plan_id>/scoring/criteria", methods=["POST"])
+@login_required
+@require_capture_manager
+def add_scoring_criterion(plan_id: int):
+    """Add a new scoring criterion."""
+    plan = db.get_capture_plan(plan_id)
+    if not plan:
+        abort(404)
+    
+    name = request.form.get("name", "").strip()
+    if not name:
+        flash("Criterion name is required.", "warning")
+        return redirect(url_for("scoring_dashboard", plan_id=plan_id))
+    
+    criterion_id = db.create_scoring_criteria(
+        capture_plan_id=plan_id,
+        name=name,
+        description=request.form.get("description", "").strip() or None,
+        weight=float(request.form.get("weight", 1.0)),
+        max_score=float(request.form.get("max_score", 10.0)),
+        guidance=request.form.get("guidance", "").strip() or None,
+        created_by_user_id=current_user.id
+    )
+    
+    if criterion_id:
+        db.write_audit_log("SCORING_CRITERIA_CREATED",
+                          username=current_user.username,
+                          user_id=current_user.id,
+                          detail=f"Added criterion '{name}' to capture plan",
+                          ip_address=request.remote_addr)
+        flash(f"Criterion '{name}' created.", "success")
+    else:
+        flash("Failed to create criterion.", "danger")
+    
+    return redirect(url_for("scoring_dashboard", plan_id=plan_id))
+
+
+@app.route("/capture-plans/<int:plan_id>/scoring/criteria/<int:crit_id>/delete", methods=["POST"])
+@login_required
+@require_capture_manager
+def delete_scoring_criterion(plan_id: int, crit_id: int):
+    """Delete a scoring criterion."""
+    plan = db.get_capture_plan(plan_id)
+    if not plan:
+        abort(404)
+    
+    if db.delete_scoring_criteria(crit_id):
+        db.write_audit_log("SCORING_CRITERIA_DELETED",
+                          username=current_user.username,
+                          user_id=current_user.id,
+                          detail="Deleted scoring criterion",
+                          ip_address=request.remote_addr)
+        flash("Criterion deleted.", "success")
+    else:
+        flash("Failed to delete criterion.", "danger")
+    
+    return redirect(url_for("scoring_dashboard", plan_id=plan_id))
+
+
+@app.route("/projects/<int:project_id>/scoring", methods=["GET"])
+@login_required
+def score_proposal_page(project_id: int):
+    """View scoring interface for a proposal."""
+    project = db.get_project(project_id)
+    if not project:
+        flash("Project not found.", "warning")
+        return redirect(url_for("projects"))
+    
+    # Get capture plan if linked
+    capture_plan_id = project.get('capture_plan_id')
+    if not capture_plan_id:
+        flash("Project not linked to a capture plan.", "warning")
+        return redirect(url_for("project_detail", project_id=project_id))
+    
+    criteria = db.get_scoring_criteria(capture_plan_id)
+    scores_data = db.get_proposal_scores(project_id)
+    final_score = db.calculate_final_score(project_id)
+    ranking = db.get_proposal_ranking(project_id)
+    
+    return render_template("score_proposal.html",
+                          project=project,
+                          criteria=criteria,
+                          scores=scores_data,
+                          final_score=final_score,
+                          ranking=ranking)
+
+
+@app.route("/projects/<int:project_id>/scoring/score", methods=["POST"])
+@login_required
+def submit_proposal_score(project_id: int):
+    """Submit a score for a proposal."""
+    project = db.get_project(project_id)
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
+    
+    criterion_id = request.form.get("criterion_id", type=int)
+    score_value = request.form.get("score_value", type=float)
+    comments = request.form.get("comments", "").strip() or None
+    
+    if criterion_id is None or score_value is None:
+        flash("Criterion and score value are required.", "warning")
+        return redirect(url_for("score_proposal_page", project_id=project_id))
+    
+    if db.score_proposal(project_id, criterion_id, score_value, comments, current_user.id):
+        # Recalculate rankings
+        if project.get('capture_plan_id'):
+            db.recalculate_rankings(project['capture_plan_id'])
+        
+        db.write_audit_log("PROPOSAL_SCORED",
+                          username=current_user.username,
+                          user_id=current_user.id,
+                          detail=f"Scored proposal '{project['name']}'",
+                          ip_address=request.remote_addr)
+        
+        flash("Score saved.", "success")
+    else:
+        flash("Failed to save score.", "danger")
+    
+    return redirect(url_for("score_proposal_page", project_id=project_id))
+
+
+@app.route("/capture-plans/<int:plan_id>/rankings", methods=["GET"])
+@login_required
+@require_capture_manager
+def view_rankings(plan_id: int):
+    """View proposal rankings for a capture plan."""
+    plan = db.get_capture_plan(plan_id)
+    if not plan:
+        flash("Capture plan not found.", "warning")
+        return redirect(url_for("capture_dashboard"))
+    
+    sort_by = request.args.get("sort_by", "rank")
+    rankings = db.get_capture_plan_rankings(plan_id, sort_by)
+    progress = db.get_scoring_progress(plan_id)
+    
+    return render_template("proposal_rankings.html",
+                          plan=plan,
+                          rankings=rankings,
+                          progress=progress,
+                          sort_by=sort_by)
+
+
+@app.route("/api/projects/<int:project_id>/scores", methods=["GET"])
+@login_required
+def get_proposal_scores_api(project_id: int):
+    """Get all scores for a proposal (JSON API)."""
+    project = db.get_project(project_id)
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
+    
+    scores_data = db.get_proposal_scores(project_id)
+    return jsonify(scores_data)
+
+
+@app.route("/api/projects/<int:project_id>/final-score", methods=["GET"])
+@login_required
+def get_final_score_api(project_id: int):
+    """Get calculated final score (JSON API)."""
+    project = db.get_project(project_id)
+    if not project:
+        return jsonify({'error': 'Project not found'}), 404
+    
+    final_score = db.calculate_final_score(project_id)
+    ranking = db.get_proposal_ranking(project_id)
+    
+    return jsonify({
+        'final_score': final_score,
+        'ranking': dict(ranking) if ranking else None
+    })
+
+
+@app.route("/api/capture-plans/<int:plan_id>/rankings", methods=["GET"])
+@login_required
+def get_rankings_api(plan_id: int):
+    """Get rankings as JSON."""
+    plan = db.get_capture_plan(plan_id)
+    if not plan:
+        return jsonify({'error': 'Capture plan not found'}), 404
+    
+    sort_by = request.args.get("sort_by", "rank")
+    rankings = db.get_capture_plan_rankings(plan_id, sort_by)
+    
+    return jsonify({
+        'plan_id': plan_id,
+        'rankings': [dict(r) for r in rankings],
+        'count': len(rankings)
+    })
+
+
+# ── Task Management ────────────────────────────────────────────────────────────
+
+@app.route("/tasks")
+@login_required
+def tasks():
+    """Task management page."""
+    db.expire_stale_tasks()  # auto-transition expired tasks
+
+    view    = request.args.get("view", "mine")       # mine | assigned | all | project
+    proj_id = request.args.get("project_id", type=int)
+    status  = request.args.get("status", "")
+
+    if view == "assigned":
+        task_list = db.get_tasks(assigned_to_id=current_user.id,
+                                  status=status or None)
+    elif view == "all":
+        task_list = db.get_tasks(status=status or None)
+    elif view == "project" and proj_id:
+        task_list = db.get_tasks(project_id=proj_id, status=status or None)
+    else:  # mine — created by or assigned to me
+        task_list = db.get_tasks(user_id=current_user.id, status=status or None)
+
+    projects = db.get_projects(limit=200)
+    users    = db.get_all_users()
+    counts   = db.get_task_counts_for_user(current_user.id)
+
+    return render_template("tasks.html",
+                           task_list=task_list,
+                           projects=projects,
+                           users=users,
+                           counts=counts,
+                           view=view,
+                           sel_project_id=proj_id,
+                           sel_status=status)
+
+
+@app.route("/tasks/create", methods=["POST"])
+@login_required
+def create_task():
+    data = {
+        "title":          request.form.get("title", "").strip(),
+        "description":    request.form.get("description", "").strip(),
+        "project_id":     request.form.get("project_id") or None,
+        "deliverable":    request.form.get("deliverable", "").strip(),
+        "created_by_id":  current_user.id,
+        "assigned_to_id": request.form.get("assigned_to_id") or None,
+        "start_date":     request.form.get("start_date") or None,
+        "end_date":       request.form.get("end_date") or None,
+        "expire_date":    request.form.get("expire_date") or None,
+        "status":         "active",
+        "priority":       request.form.get("priority", "normal"),
+    }
+    if not data["title"]:
+        flash("Task title is required.", "warning")
+        return redirect(url_for("tasks"))
+
+    task_id = db.create_task(data)
+
+    # Notify assigned user if different from creator
+    if data["assigned_to_id"] and int(data["assigned_to_id"]) != current_user.id:
+        db.create_notification(
+            user_id=int(data["assigned_to_id"]),
+            ntype="task_assigned",
+            project_id=data["project_id"],
+            actor_user_id=current_user.id,
+            message=f"{current_user.username} assigned you a task: \"{data['title']}\""
+        )
+
+    flash("Task created.", "success")
+    return redirect(url_for("tasks"))
+
+
+@app.route("/tasks/<int:task_id>/edit", methods=["POST"])
+@login_required
+def edit_task(task_id: int):
+    task = db.get_task(task_id)
+    if not task:
+        abort(404)
+    # Only creator or admin can edit
+    if task["created_by_id"] != current_user.id and not current_user.is_admin:
+        flash("You can only edit tasks you created.", "danger")
+        return redirect(url_for("tasks"))
+
+    old_assignee = task.get("assigned_to_id")
+    new_assignee = request.form.get("assigned_to_id") or None
+    if new_assignee:
+        new_assignee = int(new_assignee)
+
+    data = {
+        "title":          request.form.get("title", "").strip(),
+        "description":    request.form.get("description", "").strip(),
+        "project_id":     request.form.get("project_id") or None,
+        "deliverable":    request.form.get("deliverable", "").strip(),
+        "assigned_to_id": new_assignee,
+        "start_date":     request.form.get("start_date") or None,
+        "end_date":       request.form.get("end_date") or None,
+        "expire_date":    request.form.get("expire_date") or None,
+        "status":         request.form.get("status", task["status"]),
+        "priority":       request.form.get("priority", "normal"),
+    }
+    db.update_task(task_id, data)
+
+    # Notify if assignee changed
+    if new_assignee and new_assignee != old_assignee and new_assignee != current_user.id:
+        db.create_notification(
+            user_id=new_assignee,
+            ntype="task_assigned",
+            project_id=data["project_id"],
+            actor_user_id=current_user.id,
+            message=f"{current_user.username} assigned you a task: \"{data['title']}\""
+        )
+
+    flash("Task updated.", "success")
+    return redirect(url_for("tasks"))
+
+
+@app.route("/tasks/<int:task_id>/status", methods=["POST"])
+@login_required
+def update_task_status(task_id: int):
+    task = db.get_task(task_id)
+    if not task:
+        abort(404)
+    new_status = request.form.get("status", "active")
+    db.update_task(task_id, {**task, "status": new_status})
+    return redirect(request.referrer or url_for("tasks"))
+
+
+@app.route("/tasks/<int:task_id>/delete", methods=["POST"])
+@login_required
+def delete_task(task_id: int):
+    task = db.get_task(task_id)
+    if not task:
+        abort(404)
+    if task["created_by_id"] != current_user.id and not current_user.is_admin:
+        flash("You can only delete tasks you created.", "danger")
+        return redirect(url_for("tasks"))
+    db.delete_task(task_id)
+    flash("Task deleted.", "success")
+    return redirect(url_for("tasks"))
+
+
+@app.route("/projects/<int:project_id>/checklist/<int:item_id>/schedule", methods=["POST"])
+@login_required
+def update_checklist_schedule(project_id: int, item_id: int):
+    """Update scheduling fields (assignee, dates, hours) for a checklist item."""
+    db.update_checklist_schedule(
+        item_id=item_id,
+        assigned_to_id=request.form.get("assigned_to_id") or None,
+        start_date=request.form.get("start_date") or None,
+        end_date=request.form.get("end_date") or None,
+        estimated_hours=request.form.get("estimated_hours") or 0,
+        actual_hours=request.form.get("actual_hours") or 0,
+    )
+    return redirect(url_for("project_detail", project_id=project_id))

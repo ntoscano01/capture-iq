@@ -19,6 +19,7 @@
             <th>Username</th>
             <th>Email</th>
             <th>Role</th>
+            <th>Capture Manager</th>
             <th>Status</th>
             <th>Last Login</th>
             <th>Failed</th>
@@ -28,82 +29,101 @@
         </thead>
         <tbody>
           {% for u in users %}
-          <tr class="{{ 'table-secondary text-muted' if not u.is_active }}">
+          <tr class="{{ 'table-secondary text-muted' if not u['is_active'] }}">
             <td>
               <i class="bi bi-person-circle me-1 text-muted"></i>
-              <strong>{{ u.username }}</strong>
-              {% if u.id == current_user.id %}
+              <strong>{{ u['username'] }}</strong>
+              {% if u['id'] == current_user.id %}
                 <span class="badge bg-info ms-1" style="font-size:.6rem">You</span>
               {% endif %}
-              {% if u.locked_at %}
+              {% if u['locked_at'] %}
                 <span class="badge bg-danger ms-1" style="font-size:.6rem">
                   <i class="bi bi-lock-fill"></i> Locked
                 </span>
               {% endif %}
             </td>
-            <td class="text-muted">{{ u.email or '—' }}</td>
+            <td class="text-muted">{{ u['email'] or '—' }}</td>
             <td>
-              {% if u.role == 'admin' %}
+              {% if u['role'] == 'admin' %}
                 <span class="badge bg-danger">Admin</span>
               {% else %}
                 <span class="badge bg-secondary">User</span>
               {% endif %}
             </td>
             <td>
-              {% if not u.is_active %}
+              {% if u['is_capture_manager'] %}
+                <span class="badge bg-info">Capture Manager</span>
+              {% else %}
+                <span class="badge bg-secondary">Regular</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if not u['is_active'] %}
                 <span class="badge bg-secondary">Inactive</span>
-              {% elif u.locked_at %}
+              {% elif u['locked_at'] %}
                 <span class="badge bg-danger">Locked</span>
               {% else %}
                 <span class="badge bg-success">Active</span>
               {% endif %}
             </td>
             <td class="text-muted" style="font-size:.8rem">
-              {% if u.last_login_at %}
-                {{ u.last_login_at[:16].replace('T',' ') }}
-                {% if u.last_login_ip %}
-                  <br><span style="font-size:.75rem; color:#adb5bd">{{ u.last_login_ip }}</span>
+              {% if u['last_login_at'] %}
+                {{ u['last_login_at'][:16].replace('T',' ') }}
+                {% if u['last_login_ip'] %}
+                  <br><span style="font-size:.75rem; color:#adb5bd">{{ u['last_login_ip'] }}</span>
                 {% endif %}
               {% else %}
                 <span class="text-muted">Never</span>
               {% endif %}
             </td>
             <td class="text-center">
-              {% if u.failed_login_attempts > 0 %}
-                <span class="badge {{ 'bg-danger' if u.locked_at else 'bg-warning text-dark' }}">
-                  {{ u.failed_login_attempts }}
+              {% if u['failed_login_attempts'] > 0 %}
+                <span class="badge {{ 'bg-danger' if u['locked_at'] else 'bg-warning text-dark' }}">
+                  {{ u['failed_login_attempts'] }}
                 </span>
               {% else %}
                 <span class="text-muted">0</span>
               {% endif %}
             </td>
-            <td class="text-muted" style="font-size:.8rem">{{ u.created_at[:10] if u.created_at else '—' }}</td>
+            <td class="text-muted" style="font-size:.8rem">{{ u['created_at'][:10] if u['created_at'] else '—' }}</td>
             <td class="text-end" style="white-space:nowrap">
-              {% if u.id != current_user.id %}
+              {% if u['id'] != current_user.id %}
+              <!-- Capture Manager Elevation/Removal -->
+              {% if u['is_capture_manager'] %}
+              <button type="button" class="btn btn-sm btn-outline-info py-0 ms-1" title="Remove Capture Manager"
+                      onclick="removeCaptureManager({{ u['id'] }}, '{{ u['username'] }}')">
+                <i class="bi bi-shield-x"></i>
+              </button>
+              {% else %}
+              <button type="button" class="btn btn-sm btn-outline-success py-0 ms-1" title="Make Capture Manager"
+                      onclick="elevateCaptureManager({{ u['id'] }}, '{{ u['username'] }}')">
+                <i class="bi bi-shield-check"></i>
+              </button>
+              {% endif %}
               <!-- Unlock if locked -->
-              {% if u.locked_at %}
-              <form method="post" action="{{ url_for('admin_unlock_user', user_id=u.id) }}" class="d-inline">
+              {% if u['locked_at'] %}
+              <form method="post" action="{{ url_for('admin_unlock_user', user_id=u['id']) }}" class="d-inline">
                 <button type="submit" class="btn btn-sm btn-warning py-0" title="Unlock account">
                   <i class="bi bi-unlock-fill"></i>
                 </button>
               </form>
               {% endif %}
               <!-- Activate / Deactivate -->
-              <form method="post" action="{{ url_for('admin_toggle_user', user_id=u.id) }}" class="d-inline ms-1">
-                <button type="submit" class="btn btn-sm {{ 'btn-outline-warning' if u.is_active else 'btn-outline-success' }} py-0"
-                        title="{{ 'Deactivate' if u.is_active else 'Activate' }}">
-                  <i class="bi {{ 'bi-pause-circle' if u.is_active else 'bi-play-circle' }}"></i>
+              <form method="post" action="{{ url_for('admin_toggle_user', user_id=u['id']) }}" class="d-inline ms-1">
+                <button type="submit" class="btn btn-sm {{ 'btn-outline-warning' if u['is_active'] else 'btn-outline-success' }} py-0"
+                        title="{{ 'Deactivate' if u['is_active'] else 'Activate' }}">
+                  <i class="bi {{ 'bi-pause-circle' if u['is_active'] else 'bi-play-circle' }}"></i>
                 </button>
               </form>
               <!-- Reset password -->
               <button type="button" class="btn btn-sm btn-outline-secondary py-0 ms-1"
-                      data-bs-toggle="modal" data-bs-target="#resetModal{{ u.id }}"
+                      data-bs-toggle="modal" data-bs-target="#resetModal{{ u['id'] }}"
                       title="Reset password">
                 <i class="bi bi-key"></i>
               </button>
               <!-- Delete -->
-              <form method="post" action="{{ url_for('admin_delete_user', user_id=u.id) }}" class="d-inline ms-1"
-                    onsubmit="return confirm('Delete user {{ u.username }}? This cannot be undone.')">
+              <form method="post" action="{{ url_for('admin_delete_user', user_id=u['id']) }}" class="d-inline ms-1"
+                    onsubmit="return confirm('Delete user {{ u['username'] }}? This cannot be undone.')">
                 <button type="submit" class="btn btn-sm btn-outline-danger py-0" title="Delete user">
                   <i class="bi bi-trash3"></i>
                 </button>
@@ -113,14 +133,14 @@
           </tr>
 
           <!-- Reset Password Modal -->
-          <div class="modal fade" id="resetModal{{ u.id }}" tabindex="-1">
+          <div class="modal fade" id="resetModal{{ u['id'] }}" tabindex="-1">
             <div class="modal-dialog modal-sm">
               <div class="modal-content">
                 <div class="modal-header py-2">
-                  <h6 class="modal-title">Reset password — {{ u.username }}</h6>
+                  <h6 class="modal-title">Reset password — {{ u['username'] }}</h6>
                   <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
-                <form method="post" action="{{ url_for('admin_reset_password', user_id=u.id) }}">
+                <form method="post" action="{{ url_for('admin_reset_password', user_id=u['id']) }}">
                   <div class="modal-body">
                     <input type="password" name="new_password" class="form-control form-control-sm"
                            placeholder="New password (min 6 chars)" required minlength="6">
@@ -197,4 +217,65 @@
 
 
 </div>
+
+<script>
+function elevateCaptureManager(userId, username) {
+  if (!confirm(`Elevate ${username} to Capture Manager? They will see competitive intelligence and sensitive data.`)) {
+    return;
+  }
+
+  fetch(`/admin/users/${userId}/elevate-capture-manager`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({})
+  })
+  .then(response => {
+    if (!response.ok) {
+      return response.json().then(data => {
+        throw new Error(data.message || `HTTP error! status: ${response.status}`);
+      });
+    }
+    return response.json();
+  })
+  .then(data => {
+    alert(data.message);
+    location.reload();
+  })
+  .catch(error => {
+    alert('Error: ' + error.message);
+    console.error('Error:', error);
+  });
+}
+
+function removeCaptureManager(userId, username) {
+  if (!confirm(`Remove Capture Manager status from ${username}? They will no longer see competitive intelligence.`)) {
+    return;
+  }
+
+  fetch(`/admin/users/${userId}/remove-capture-manager`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    }
+  })
+  .then(response => {
+    if (!response.ok) {
+      return response.json().then(data => {
+        throw new Error(data.message || `HTTP error! status: ${response.status}`);
+      });
+    }
+    return response.json();
+  })
+  .then(data => {
+    alert(data.message);
+    location.reload();
+  })
+  .catch(error => {
+    alert('Error: ' + error.message);
+    console.error('Error:', error);
+  });
+}
+</script>
 {% endblock %}

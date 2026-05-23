@@ -179,10 +179,28 @@
       </a>
     </li>
     <li class="nav-section">Capture</li>
+    <!-- Capture Management (Capture Managers Only) -->
+    {% if user_is_capture_manager() %}
+    <li class="nav-item">
+      <a class="nav-link {% if request.endpoint == 'capture_dashboard' %}active{% endif %}"
+         href="{{ url_for('capture_dashboard') }}">
+        <i class="bi bi-bullseye"></i> Capture Planning
+      </a>
+    </li>
+    {% endif %}
     <li class="nav-item">
       <a class="nav-link {% if request.endpoint in ['projects', 'project_detail', 'create_project'] %}active{% endif %}"
          href="{{ url_for('projects') }}">
         <i class="bi bi-folder2-open"></i> Projects
+      </a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link {% if request.endpoint == 'tasks' %}active{% endif %}"
+         href="{{ url_for('tasks') }}">
+        <i class="bi bi-check2-square"></i> Tasks
+        {% if task_counts and task_counts.overdue > 0 %}
+          <span class="badge bg-danger ms-1" style="font-size:.6rem">{{ task_counts.overdue }}</span>
+        {% endif %}
       </a>
     </li>
     <li class="nav-section">Insights</li>
@@ -194,6 +212,16 @@
     </li>
   </ul>
   {% endif %}
+
+  <ul class="nav flex-column">
+    <li class="nav-section" style="margin-top:.5rem">Help</li>
+    <li class="nav-item">
+      <a class="nav-link {% if request.endpoint == 'user_guide' %}active{% endif %}"
+         href="{{ url_for('user_guide') }}">
+        <i class="bi bi-book-half"></i> User Guide
+      </a>
+    </li>
+  </ul>
 
   <div class="mt-auto" style="border-top:1px solid rgba(255,255,255,.15)">
     {% if not (current_user.is_authenticated and current_user.is_admin) %}
@@ -210,18 +238,33 @@
           {% endif %}
         </a>
       </li>
+      <li class="nav-item">
+        <a class="nav-link {% if request.endpoint == 'sharepoint_settings' %}active{% endif %}"
+           href="{{ url_for('sharepoint_settings') }}">
+          <i class="bi bi-share text-muted"></i> SharePoint
+        </a>
+      </li>
     </ul>
     {% endif %}
     {% if current_user.is_authenticated %}
     <div style="padding:.6rem 1rem; border-top:1px solid rgba(255,255,255,.1); font-size:.78rem; color:rgba(255,255,255,.6)">
-      <i class="bi bi-person-circle me-1"></i>
-      <span>{{ current_user.username }}</span>
-      {% if current_user.is_admin %}
-        <span class="badge bg-danger ms-1" style="font-size:.6rem">Admin</span>
-      {% endif %}
-      <a href="{{ url_for('logout') }}" class="float-end text-white-50" title="Sign out"
-         style="text-decoration:none; font-size:.9rem">
-        <i class="bi bi-box-arrow-right"></i>
+      <div class="d-flex align-items-center justify-content-between mb-2">
+        <div>
+          <i class="bi bi-person-circle me-1"></i>
+          <span>{{ current_user.username }}</span>
+          {% if current_user.is_admin %}
+            <span class="badge bg-danger ms-1" style="font-size:.6rem">Admin</span>
+          {% endif %}
+        </div>
+        <a href="{{ url_for('logout') }}" class="text-white-50" title="Sign out"
+           style="text-decoration:none; font-size:.9rem">
+          <i class="bi bi-box-arrow-right"></i>
+        </a>
+      </div>
+      <a href="{{ url_for('notifications') }}" style="color:rgba(255,255,255,.8); text-decoration:none; font-size:.75rem"
+         class="d-block">
+        <i class="bi bi-bell me-1"></i> Notifications
+        <span id="notif-badge" class="badge bg-danger" style="font-size:.6rem; display:none;">0</span>
       </a>
     </div>
     <div style="padding:.4rem .75rem .6rem">
@@ -254,6 +297,33 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+<!-- Notification badge updater -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  {% if current_user.is_authenticated %}
+  // Check notifications every 30 seconds
+  function updateNotificationBadge() {
+    fetch('{{ url_for("get_notifications") }}')
+      .then(r => r.json())
+      .then(data => {
+        const badge = document.getElementById('notif-badge');
+        const unread = data.filter(n => !n.is_read).length;
+        if (unread > 0) {
+          badge.textContent = unread;
+          badge.style.display = 'inline-block';
+        } else {
+          badge.style.display = 'none';
+        }
+      })
+      .catch(err => console.log('Notification sync failed', err));
+  }
+  updateNotificationBadge();
+  setInterval(updateNotificationBadge, 30000);
+  {% endif %}
+});
+</script>
+
 {% block scripts %}{% endblock %}
 </body>
 </html>

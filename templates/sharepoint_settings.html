@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}SharePoint Settings — SBIR Capture{% endblock %}
+
+{% block content %}
+
+<div class="topbar">
+  <h1><i class="bi bi-share text-primary me-2"></i> SharePoint Integration</h1>
+</div>
+
+<!-- Status Card -->
+<div class="card mb-4" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07)">
+  <div class="card-header bg-white fw-semibold border-bottom d-flex align-items-center">
+    <i class="bi bi-info-circle text-primary me-2"></i> Connection Status
+  </div>
+  <div class="card-body">
+    {% if connected %}
+    <div class="alert alert-success" role="alert">
+      <i class="bi bi-check-circle me-2"></i> SharePoint is connected!
+    </div>
+    <p class="text-muted mb-3">You can now link SharePoint documents to your SBIR projects.</p>
+    <form method="post" action="{{ url_for('sharepoint_disconnect') }}" style="display:inline">
+      <button type="submit" class="btn btn-outline-danger" onclick="return confirm('Disconnect SharePoint?')">
+        <i class="bi bi-x-circle me-1"></i> Disconnect
+      </button>
+    </form>
+    {% else %}
+    <div class="alert alert-warning" role="alert">
+      <i class="bi bi-exclamation-triangle me-2"></i> SharePoint is not connected.
+    </div>
+    <p class="text-muted mb-3">To enable SharePoint integration, you'll need to:</p>
+    <ol class="text-muted" style="font-size:.9rem; margin-bottom:1.5rem">
+      <li>Create a Microsoft Azure application registration</li>
+      <li>Configure OAuth credentials (Client ID and Secret)</li>
+      <li>Grant permissions to access SharePoint files</li>
+      <li>Add credentials to your CaptureIQ settings</li>
+    </ol>
+    <p class="alert alert-info" role="alert" style="font-size:.85rem">
+      <i class="bi bi-info-circle me-1"></i>
+      <strong>Note:</strong> SharePoint integration requires additional setup. Please refer to the
+      <a href="https://docs.microsoft.com/en-us/graph/auth-register-app-v2" target="_blank" rel="noopener">
+      Microsoft Graph API documentation
+      </a> for detailed instructions.
+    </p>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Features Card -->
+<div class="card" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07)">
+  <div class="card-header bg-white fw-semibold border-bottom d-flex align-items-center">
+    <i class="bi bi-lightning text-primary me-2"></i> Features
+  </div>
+  <div class="card-body">
+    <div class="row g-3">
+      <div class="col-md-6">
+        <div class="d-flex gap-3">
+          <div style="font-size:1.5rem; color:var(--navy)">
+            <i class="bi bi-link-45deg"></i>
+          </div>
+          <div>
+            <div class="fw-semibold">Link Documents</div>
+            <div style="font-size:.85rem; color:#6c757d">
+              Link existing SharePoint documents to your SBIR projects
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="d-flex gap-3">
+          <div style="font-size:1.5rem; color:var(--navy)">
+            <i class="bi bi-share-fill"></i>
+          </div>
+          <div>
+            <div class="fw-semibold">Team Collaboration</div>
+            <div style="font-size:.85rem; color:#6c757d">
+              Keep team documents in SharePoint while tracking them in CaptureIQ
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="d-flex gap-3">
+          <div style="font-size:1.5rem; color:var(--navy)">
+            <i class="bi bi-shield-check"></i>
+          </div>
+          <div>
+            <div class="fw-semibold">Enterprise Security</div>
+            <div style="font-size:.85rem; color:#6c757d">
+              Use SharePoint's built-in access controls and compliance features
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="d-flex gap-3">
+          <div style="font-size:1.5rem; color:var(--navy)">
+            <i class="bi bi-clock-history"></i>
+          </div>
+          <div>
+            <div class="fw-semibold">Version History</div>
+            <div style="font-size:.85rem; color:#6c757d">
+              Access SharePoint's document version history and file audits
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

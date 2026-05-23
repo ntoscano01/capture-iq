@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Notifications — SBIR Capture{% endblock %}
+
+{% block content %}
+
+<div class="topbar">
+  <h1><i class="bi bi-bell text-primary me-2"></i> Notifications</h1>
+  {% if unread_count > 0 %}
+  <form method="post" action="{{ url_for('mark_all_read') }}" class="ms-auto">
+    <button type="submit" class="btn btn-sm btn-outline-secondary">
+      Mark all as read
+    </button>
+  </form>
+  {% endif %}
+</div>
+
+{% if notifications %}
+<div class="card" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07)">
+  <div class="list-group list-group-flush">
+    {% for notif in notifications %}
+    <div class="list-group-item py-3 {% if not notif['is_read'] %}bg-light{% endif %}">
+      <div class="d-flex gap-3">
+        <!-- Icon -->
+        <div class="mt-1">
+          {% if notif['type'] == 'share' %}
+          <i class="bi bi-person-plus text-primary" style="font-size:1.5rem"></i>
+          {% elif notif['type'] == 'comment' %}
+          <i class="bi bi-chat-left-text text-info" style="font-size:1.5rem"></i>
+          {% else %}
+          <i class="bi bi-info-circle text-secondary" style="font-size:1.5rem"></i>
+          {% endif %}
+        </div>
+
+        <!-- Content -->
+        <div class="flex-grow-1">
+          <div class="fw-semibold">
+            {% if notif['username'] %}
+            <a href="#" class="text-decoration-none">{{ notif['username'] }}</a>
+            {% endif %}
+            <span class="text-muted fw-normal">
+              {% if notif['type'] == 'share' %}
+              shared a project with you
+              {% elif notif['type'] == 'comment' %}
+              commented on a project
+              {% else %}
+              sent you a notification
+              {% endif %}
+            </span>
+          </div>
+          <div class="text-muted" style="font-size:.9rem">{{ notif['message'] }}</div>
+          <div style="font-size:.8rem; color:#999; margin-top:4px">
+            {{ notif['created_at'][:10] }} at {{ notif['created_at'][11:16] }}
+          </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="text-end">
+          {% if notif['project_id'] %}
+          <a href="{{ url_for('project_detail', project_id=notif['project_id']) }}"
+             class="btn btn-sm btn-outline-primary">
+            View Project
+          </a>
+          {% endif %}
+          {% if not notif['is_read'] %}
+          <form method="post" action="{{ url_for('mark_notification_read', notif_id=notif['id']) }}"
+                style="display:inline">
+            <button type="submit" class="btn btn-sm btn-link text-secondary" title="Mark as read">
+              <i class="bi bi-check-lg"></i>
+            </button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% else %}
+<div class="alert alert-info" role="alert">
+  <i class="bi bi-info-circle me-2"></i> No notifications yet.
+</div>
+{% endif %}
+
+{% endblock %}

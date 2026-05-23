@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}Create Capture Plan — CaptureIQ{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <i class="bi bi-plus-circle text-primary fs-5"></i>
+  <h1>Create Capture Plan</h1>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-8">
+    <div class="card">
+      <div class="card-body">
+        <form method="post" action="{{ url_for('create_capture_plan') }}" class="needs-validation">
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Capture Plan Name <span class="text-danger">*</span></label>
+            <input type="text" class="form-control" name="capture_name" placeholder="e.g., DoD AI Initiative Q3 2026" required>
+            <small class="text-muted">Give this opportunity a distinctive name for easy reference</small>
+          </div>
+
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label fw-semibold">Customer Name</label>
+              <input type="text" class="form-control" name="customer_name" placeholder="e.g., Department of Defense">
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label fw-semibold">Customer Website</label>
+              <input type="url" class="form-control" name="customer_website" placeholder="https://example.gov">
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Link to SBIR Topic (Optional)</label>
+            <select class="form-select" name="solicitation_id">
+              <option value="">— No Topic Linked —</option>
+              {% for topic in topics %}
+              <option value="{{ topic['id'] }}">
+                {{ topic['topic_number'] }} | {{ topic['title'][:60] }}...
+              </option>
+              {% endfor %}
+            </select>
+            <small class="text-muted">Link this capture to a known SBIR solicitation</small>
+          </div>
+
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label fw-semibold">Estimated Release Date</label>
+              <input type="date" class="form-control" name="estimated_release_date">
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label fw-semibold">Proposal Due Date</label>
+              <input type="date" class="form-control" name="proposal_due_date">
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label fw-semibold">Target Contract Value</label>
+              <div class="input-group">
+                <span class="input-group-text">$</span>
+                <input type="number" class="form-control" name="target_contract_value"
+                       placeholder="0.00" step="0.01" min="0">
+                <span class="input-group-text">.00</span>
+              </div>
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label fw-semibold">Initial Win Probability</label>
+              <div class="input-group">
+                <input type="number" class="form-control" name="win_probability"
+                       placeholder="50" min="0" max="100" value="50">
+                <span class="input-group-text">%</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label fw-semibold">Initial Stage</label>
+              <select class="form-select" name="stage">
+                <option value="pre-release" selected>Pre-Release</option>
+                <option value="rfp-released">RFP Released</option>
+                <option value="proposal-submitted">Proposal Submitted</option>
+                <option value="won">Won</option>
+                <option value="lost">Lost</option>
+              </select>
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label fw-semibold">Initial Confidence Level</label>
+              <select class="form-select" name="confidence_level">
+                <option value="low">Low</option>
+                <option value="medium" selected>Medium</option>
+                <option value="high">High</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Notes (Optional)</label>
+            <textarea class="form-control" name="notes" rows="4" placeholder="Add any initial notes about this opportunity..."></textarea>
+          </div>
+
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-plus-circle"></i> Create Capture Plan
+            </button>
+            <a href="{{ url_for('capture_dashboard') }}" class="btn btn-secondary">Cancel</a>
+          </div>
+
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card bg-light">
+      <div class="card-body" style="font-size: 0.9rem;">
+        <h6 class="card-title fw-semibold"><i class="bi bi-info-circle text-primary"></i> About Capture Plans</h6>
+        <p class="text-muted mb-2">
+          A capture plan tracks a high-value sales opportunity from initial discovery through proposal submission and award.
+        </p>
+        <p class="text-muted mb-2">
+          <strong>Start Date:</strong> When you first learn about the opportunity (pre-release).
+        </p>
+        <p class="text-muted mb-2">
+          <strong>Stages:</strong>
+        </p>
+        <ul class="text-muted mb-2" style="font-size: 0.85rem; margin-left: 1.2rem;">
+          <li><strong>Pre-Release:</strong> Before RFP released, opportunity identified</li>
+          <li><strong>RFP Released:</strong> Official solicitation published</li>
+          <li><strong>Proposal Submitted:</strong> Your team's response submitted</li>
+          <li><strong>Won/Lost:</strong> Contract awarded or opportunity closed</li>
+        </ul>
+        <p class="text-muted mb-0">
+          <small>You can edit all details after creation, and add team members to share the capture plan.</small>
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

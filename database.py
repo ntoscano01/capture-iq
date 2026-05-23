@@ -12,9 +12,14 @@ DB_PATH = os.path.join(os.path.dirname(__file__), "sbir_pipeline.db")
 
 def get_db():
     """Return a database connection with row_factory set for dict-like access."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")
+    # Invalidate schema cache to pick up recent ALTER TABLE changes
+    try:
+        conn.execute("PRAGMA schema_version")
+    except:
+        pass
     return conn
 
 
@@ -210,11 +215,247 @@ def init_db():
                 value TEXT NOT NULL
             );
 
+            -- ── COLLABORATION FEATURES ──────────────────────────────────────
+            CREATE TABLE IF NOT EXISTS project_members (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id      INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                role            TEXT DEFAULT 'viewer',
+                added_at        TEXT DEFAULT (datetime('now')),
+                added_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                UNIQUE(project_id, user_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS project_comments (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id      INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                file_id         INTEGER REFERENCES project_files(id) ON DELETE SET NULL,
+                user_id         INTEGER NOT NULL REFERENCES users(id),
+                comment_text    TEXT NOT NULL,
+                mentions        TEXT,
+                created_at      TEXT DEFAULT (datetime('now')),
+                updated_at      TEXT DEFAULT (datetime('now')),
+                is_deleted      INTEGER DEFAULT 0
+            );
+
+            CREATE TABLE IF NOT EXISTS notifications (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                project_id      INTEGER REFERENCES projects(id) ON DELETE SET NULL,
+                type            TEXT NOT NULL,
+                actor_user_id   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                message         TEXT,
+                is_read         INTEGER DEFAULT 0,
+                created_at      TEXT DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS shared_documents (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id      INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                doc_type        TEXT NOT NULL,
+                external_url    TEXT NOT NULL,
+                external_id     TEXT,
+                title           TEXT,
+                added_by_user_id INTEGER REFERENCES users(id),
+                added_at        TEXT DEFAULT (datetime('now'))
+            );
+
             CREATE INDEX IF NOT EXISTS idx_projects_topic ON projects(topic_id);
             CREATE INDEX IF NOT EXISTS idx_projects_stage ON projects(stage);
             CREATE INDEX IF NOT EXISTS idx_pfiles_project ON project_files(project_id);
             CREATE INDEX IF NOT EXISTS idx_pchecklist_project ON project_checklist_items(project_id);
             CREATE INDEX IF NOT EXISTS idx_plog_project ON project_activity_log(project_id);
+            CREATE INDEX IF NOT EXISTS idx_pmembers_project ON project_members(project_id);
+            CREATE INDEX IF NOT EXISTS idx_pmembers_user ON project_members(user_id);
+            CREATE INDEX IF NOT EXISTS idx_pcomments_project ON project_comments(project_id);
+            CREATE INDEX IF NOT EXISTS idx_pcomments_user ON project_comments(user_id);
+            CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id);
+            CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(is_read);
+            CREATE INDEX IF NOT EXISTS idx_sdocs_project ON shared_documents(project_id);
+
+            -- ── Capture Planning ──────────────────────────────────────────────
+            CREATE TABLE IF NOT EXISTS capture_plans (
+                id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+                solicitation_id         INTEGER REFERENCES topics(id) ON DELETE SET NULL,
+                capture_name            TEXT NOT NULL,
+                capture_lead_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                customer_name           TEXT,
+                customer_website        TEXT,
+                estimated_release_date  TEXT,
+                proposal_due_date       TEXT,
+                target_contract_value   REAL,
+                stage                   TEXT DEFAULT 'pre-release',
+                confidence_level        TEXT DEFAULT 'medium',
+                win_probability         INTEGER DEFAULT 50,
+                created_at              TEXT DEFAULT (datetime('now')),
+                updated_at              TEXT DEFAULT (datetime('now')),
+                created_by_user_id      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                is_archived             INTEGER DEFAULT 0
+            );
+
+            CREATE TABLE IF NOT EXISTS capture_plan_access (
+                capture_plan_id         INTEGER NOT NULL REFERENCES capture_plans(id) ON DELETE CASCADE,
+                user_id                 INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                access_level            TEXT DEFAULT 'viewer',
+                added_at                TEXT DEFAULT (datetime('now')),
+                PRIMARY KEY (capture_plan_id, user_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_capture_plan_lead ON capture_plans(capture_lead_id);
+            CREATE INDEX IF NOT EXISTS idx_capture_plan_solicitation ON capture_plans(solicitation_id);
+            CREATE INDEX IF NOT EXISTS idx_capture_plan_stage ON capture_plans(stage);
+            CREATE INDEX IF NOT EXISTS idx_capture_plan_access_user ON capture_plan_access(user_id);
+            CREATE INDEX IF NOT EXISTS idx_capture_plan_access_plan ON capture_plan_access(capture_plan_id);
+
+            -- ── Project Team Management ───────────────────────────────────────
+            CREATE TABLE IF NOT EXISTS project_team_members (
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id          INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                user_id             INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                role                TEXT DEFAULT 'team-member',
+                status              TEXT DEFAULT 'active',
+                added_by_user_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                added_at            TEXT DEFAULT (datetime('now')),
+                UNIQUE(project_id, user_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS project_team_invitations (
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id          INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                invited_user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                invited_by_user_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE SET NULL,
+                status              TEXT DEFAULT 'pending',
+                invited_at          TEXT DEFAULT (datetime('now')),
+                responded_at        TEXT,
+                UNIQUE(project_id, invited_user_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_ptm_project ON project_team_members(project_id);
+            CREATE INDEX IF NOT EXISTS idx_ptm_user ON project_team_members(user_id);
+            CREATE INDEX IF NOT EXISTS idx_pti_project ON project_team_invitations(project_id);
+            CREATE INDEX IF NOT EXISTS idx_pti_invited_user ON project_team_invitations(invited_user_id);
+            CREATE INDEX IF NOT EXISTS idx_pti_status ON project_team_invitations(status);
+
+            -- ── Role Change History ──────────────────────────────────────────
+            CREATE TABLE IF NOT EXISTS role_change_history (
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id             INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                role_changed_to     TEXT NOT NULL,
+                changed_by_user_id  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                reason              TEXT,
+                changed_at          TEXT DEFAULT (datetime('now'))
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_role_change_user ON role_change_history(user_id);
+            CREATE INDEX IF NOT EXISTS idx_role_change_changed_by ON role_change_history(changed_by_user_id);
+
+            -- ── Proposal Scoring & Ranking ────────────────────────────────────
+            CREATE TABLE IF NOT EXISTS scoring_criteria (
+                id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+                capture_plan_id         INTEGER NOT NULL REFERENCES capture_plans(id) ON DELETE CASCADE,
+                name                    TEXT NOT NULL,
+                description             TEXT,
+                weight                  REAL DEFAULT 1.0,
+                max_score               REAL DEFAULT 10.0,
+                scoring_guidance        TEXT,
+                display_order           INTEGER DEFAULT 0,
+                is_active               INTEGER DEFAULT 1,
+                created_by_user_id      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                created_at              TEXT DEFAULT (datetime('now')),
+                updated_at              TEXT DEFAULT (datetime('now')),
+                UNIQUE(capture_plan_id, name)
+            );
+
+            CREATE TABLE IF NOT EXISTS proposal_scores (
+                id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id              INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                scoring_criterion_id    INTEGER NOT NULL REFERENCES scoring_criteria(id) ON DELETE CASCADE,
+                score_value             REAL NOT NULL,
+                comments                TEXT,
+                scored_by_user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                scored_at               TEXT DEFAULT (datetime('now')),
+                updated_at              TEXT DEFAULT (datetime('now')),
+                UNIQUE(project_id, scoring_criterion_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS proposal_rankings (
+                id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+                capture_plan_id         INTEGER NOT NULL REFERENCES capture_plans(id) ON DELETE CASCADE,
+                project_id              INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                final_score             REAL NOT NULL,
+                rank                    INTEGER NOT NULL,
+                percentile              REAL,
+                scores_complete         INTEGER DEFAULT 0,
+                last_scored_at          TEXT,
+                updated_at              TEXT DEFAULT (datetime('now')),
+                UNIQUE(capture_plan_id, project_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS scoring_templates (
+                id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+                name                    TEXT NOT NULL UNIQUE,
+                description             TEXT,
+                is_default              INTEGER DEFAULT 0,
+                created_by_user_id      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                created_at              TEXT DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS scoring_template_criteria (
+                id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+                template_id             INTEGER NOT NULL REFERENCES scoring_templates(id) ON DELETE CASCADE,
+                name                    TEXT NOT NULL,
+                description             TEXT,
+                weight                  REAL DEFAULT 1.0,
+                max_score               REAL DEFAULT 10.0,
+                scoring_guidance        TEXT,
+                display_order           INTEGER DEFAULT 0,
+                UNIQUE(template_id, name)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_scoring_criteria_capture_plan
+            ON scoring_criteria(capture_plan_id);
+            CREATE INDEX IF NOT EXISTS idx_scoring_criteria_active
+            ON scoring_criteria(is_active);
+            CREATE INDEX IF NOT EXISTS idx_proposal_scores_project
+            ON proposal_scores(project_id);
+            CREATE INDEX IF NOT EXISTS idx_proposal_scores_criterion
+            ON proposal_scores(scoring_criterion_id);
+            CREATE INDEX IF NOT EXISTS idx_proposal_scores_scorer
+            ON proposal_scores(scored_by_user_id);
+            CREATE INDEX IF NOT EXISTS idx_proposal_rankings_capture_plan
+            ON proposal_rankings(capture_plan_id);
+            CREATE INDEX IF NOT EXISTS idx_proposal_rankings_project
+            ON proposal_rankings(project_id);
+            CREATE INDEX IF NOT EXISTS idx_proposal_rankings_score
+            ON proposal_rankings(final_score DESC);
+            CREATE INDEX IF NOT EXISTS idx_scoring_templates_default
+            ON scoring_templates(is_default);
+            CREATE INDEX IF NOT EXISTS idx_template_criteria_template
+            ON scoring_template_criteria(template_id);
+
+            -- ── Task Management System ────────────────────────────────────────
+            CREATE TABLE IF NOT EXISTS tasks (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                title           TEXT NOT NULL,
+                description     TEXT,
+                project_id      INTEGER REFERENCES projects(id) ON DELETE SET NULL,
+                deliverable     TEXT,
+                created_by_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                assigned_to_id  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                start_date      TEXT,
+                end_date        TEXT,
+                expire_date     TEXT,
+                status          TEXT DEFAULT 'active',
+                priority        TEXT DEFAULT 'normal',
+                created_at      TEXT DEFAULT (datetime('now')),
+                updated_at      TEXT DEFAULT (datetime('now'))
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
+            CREATE INDEX IF NOT EXISTS idx_tasks_assigned ON tasks(assigned_to_id);
+            CREATE INDEX IF NOT EXISTS idx_tasks_created_by ON tasks(created_by_id);
+            CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+            CREATE INDEX IF NOT EXISTS idx_tasks_end_date ON tasks(end_date);
         """)
 
     # ── Migration: add new columns to existing databases ──────────────────────
@@ -223,6 +464,7 @@ def init_db():
         ("last_login_ip",           "TEXT"),
         ("failed_login_attempts",   "INTEGER DEFAULT 0"),
         ("locked_at",               "TEXT"),
+        ("is_capture_manager",      "INTEGER DEFAULT 0"),
     ]
     with get_db() as conn:
         existing = {row[1] for row in conn.execute("PRAGMA table_info(users)")}
@@ -257,6 +499,7 @@ def init_db():
         ("storage_backend", "TEXT DEFAULT 'local'"),
         ("gdrive_file_id",  "TEXT"),
         ("gdrive_web_link", "TEXT"),
+        ("uploaded_by_user_id", "INTEGER REFERENCES users(id)"),
     ]
     with get_db() as conn:
         existing = {row[1] for row in conn.execute("PRAGMA table_info(project_files)")}
@@ -268,6 +511,9 @@ def init_db():
     # ── Migrate projects table ────────────────────────────────────────────────
     new_proj_cols = [
         ("gdrive_folder_id", "TEXT"),
+        ("owner_id", "INTEGER REFERENCES users(id) ON DELETE SET NULL"),
+        ("is_shared", "INTEGER DEFAULT 0"),
+        ("capture_plan_id", "INTEGER REFERENCES capture_plans(id) ON DELETE SET NULL"),
     ]
     with get_db() as conn:
         existing = {row[1] for row in conn.execute("PRAGMA table_info(projects)")}
@@ -281,6 +527,21 @@ def init_db():
             if col not in existing:
                 conn.execute(f"ALTER TABLE topics ADD COLUMN {col} {col_type}")
                 print(f"[DB] Migrated: added topics.{col}")
+
+    # ── Migrate project_checklist_items table (add task scheduling cols) ─────
+    new_checklist_cols = [
+        ("assigned_to_id",  "INTEGER REFERENCES users(id) ON DELETE SET NULL"),
+        ("start_date",      "TEXT"),
+        ("end_date",        "TEXT"),
+        ("estimated_hours", "REAL DEFAULT 0"),
+        ("actual_hours",    "REAL DEFAULT 0"),
+    ]
+    with get_db() as conn:
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(project_checklist_items)")}
+        for col, col_type in new_checklist_cols:
+            if col not in existing:
+                conn.execute(f"ALTER TABLE project_checklist_items ADD COLUMN {col} {col_type}")
+                print(f"[DB] Migrated: added project_checklist_items.{col}")
 
     print(f"[DB] Database initialized at {DB_PATH}")
 
@@ -1071,14 +1332,34 @@ def get_user_by_username(username: str) -> dict | None:
 
 def get_all_users() -> list:
     with get_db() as conn:
-        rows = conn.execute(
-            """SELECT id, username, email, role, is_active, created_at,
-                      last_login_at, last_login_ip,
-                      COALESCE(failed_login_attempts, 0) as failed_login_attempts,
-                      locked_at
-               FROM users ORDER BY id"""
-        ).fetchall()
-    return [dict(r) for r in rows]
+        # Try with is_capture_manager column first
+        try:
+            rows = conn.execute(
+                """SELECT id, username, email, role, is_active, created_at,
+                          last_login_at, last_login_ip,
+                          COALESCE(failed_login_attempts, 0) as failed_login_attempts,
+                          locked_at, COALESCE(is_capture_manager, 0) as is_capture_manager
+                   FROM users ORDER BY id"""
+            ).fetchall()
+        except Exception:
+            # Fallback if column doesn't exist yet
+            rows = conn.execute(
+                """SELECT id, username, email, role, is_active, created_at,
+                          last_login_at, last_login_ip,
+                          COALESCE(failed_login_attempts, 0) as failed_login_attempts,
+                          locked_at
+                   FROM users ORDER BY id"""
+            ).fetchall()
+
+    result = []
+    for row in rows:
+        row_dict = dict(row)
+        # Ensure is_capture_manager exists (default to 0 if missing)
+        if 'is_capture_manager' not in row_dict:
+            row_dict['is_capture_manager'] = 0
+        result.append(row_dict)
+
+    return result
 
 
 def count_users() -> int:
@@ -1484,3 +1765,1190 @@ def get_distinct(table: str, column: str) -> list:
             f"SELECT DISTINCT {column} FROM {table} WHERE {column} IS NOT NULL ORDER BY {column}"
         ).fetchall()
     return [r[0] for r in rows]
+
+
+# ── Project Sharing & Collaboration ──────────────────────────────────────────
+
+def set_project_owner(project_id: int, user_id: int) -> bool:
+    """Set the owner of a project."""
+    with get_db() as conn:
+        conn.execute("UPDATE projects SET owner_id = ?, is_shared = 1 WHERE id = ?",
+                    (user_id, project_id))
+    return True
+
+
+def get_project_member_role(project_id: int, user_id: int) -> str | None:
+    """Get a user's role in a project. Returns 'owner', 'editor', 'viewer', or None."""
+    with get_db() as conn:
+        # Check if owner
+        project = conn.execute("SELECT owner_id FROM projects WHERE id = ?",
+                              (project_id,)).fetchone()
+        if project and project['owner_id'] == user_id:
+            return 'owner'
+
+        # Check membership
+        member = conn.execute(
+            "SELECT role FROM project_members WHERE project_id = ? AND user_id = ?",
+            (project_id, user_id)
+        ).fetchone()
+        return member['role'] if member else None
+
+
+def add_project_member(project_id: int, user_id: int, role: str = 'viewer',
+                       added_by_user_id: int = None) -> bool:
+    """Add a user to a project with a specific role."""
+    with get_db() as conn:
+        conn.execute(
+            """INSERT OR REPLACE INTO project_members
+               (project_id, user_id, role, added_by_user_id)
+               VALUES (?, ?, ?, ?)""",
+            (project_id, user_id, role, added_by_user_id)
+        )
+        conn.execute("UPDATE projects SET is_shared = 1 WHERE id = ?", (project_id,))
+    return True
+
+
+def remove_project_member(project_id: int, user_id: int) -> bool:
+    """Remove a user from a project."""
+    with get_db() as conn:
+        conn.execute(
+            "DELETE FROM project_members WHERE project_id = ? AND user_id = ?",
+            (project_id, user_id)
+        )
+    return True
+
+
+def update_project_member_role(project_id: int, user_id: int, role: str) -> bool:
+    """Update a project member's role."""
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE project_members SET role = ? WHERE project_id = ? AND user_id = ?",
+            (role, project_id, user_id)
+        )
+    return True
+
+
+def get_project_members(project_id: int) -> list:
+    """Get all members of a project with their roles."""
+    with get_db() as conn:
+        members = conn.execute("""
+            SELECT
+                pm.id,
+                pm.user_id,
+                pm.role,
+                pm.added_at,
+                u.username,
+                u.email
+            FROM project_members pm
+            JOIN users u ON pm.user_id = u.id
+            WHERE pm.project_id = ?
+            ORDER BY pm.added_at
+        """, (project_id,)).fetchall()
+    return [dict(m) for m in members]
+
+
+def get_user_accessible_projects(user_id: int) -> list:
+    """Get all projects a user can access (owned or member of)."""
+    with get_db() as conn:
+        projects = conn.execute("""
+            SELECT DISTINCT p.*
+            FROM projects p
+            LEFT JOIN project_members pm ON p.id = pm.project_id
+            WHERE p.owner_id = ? OR pm.user_id = ?
+            ORDER BY p.updated_at DESC
+        """, (user_id, user_id)).fetchall()
+    return [dict(p) for p in projects]
+
+
+# ── Project Comments ────────────────────────────────────────────────────────
+
+def add_project_comment(project_id: int, user_id: int, comment_text: str,
+                       file_id: int = None, mentions: str = None) -> int:
+    """Add a comment to a project. Returns comment ID."""
+    with get_db() as conn:
+        cursor = conn.execute("""
+            INSERT INTO project_comments
+            (project_id, file_id, user_id, comment_text, mentions)
+            VALUES (?, ?, ?, ?, ?)
+        """, (project_id, file_id, user_id, comment_text, mentions))
+        comment_id = cursor.lastrowid
+    return comment_id
+
+
+def get_project_comments(project_id: int, file_id: int = None) -> list:
+    """Get comments on a project or specific file."""
+    with get_db() as conn:
+        if file_id:
+            comments = conn.execute("""
+                SELECT
+                    pc.id, pc.project_id, pc.file_id, pc.user_id,
+                    pc.comment_text, pc.mentions, pc.created_at, pc.updated_at,
+                    u.username, u.email
+                FROM project_comments pc
+                JOIN users u ON pc.user_id = u.id
+                WHERE pc.project_id = ? AND pc.file_id = ? AND pc.is_deleted = 0
+                ORDER BY pc.created_at DESC
+            """, (project_id, file_id)).fetchall()
+        else:
+            comments = conn.execute("""
+                SELECT
+                    pc.id, pc.project_id, pc.file_id, pc.user_id,
+                    pc.comment_text, pc.mentions, pc.created_at, pc.updated_at,
+                    u.username, u.email
+                FROM project_comments pc
+                JOIN users u ON pc.user_id = u.id
+                WHERE pc.project_id = ? AND pc.is_deleted = 0
+                ORDER BY pc.created_at DESC
+            """, (project_id,)).fetchall()
+    return [dict(c) for c in comments]
+
+
+def delete_comment(comment_id: int) -> bool:
+    """Soft-delete a comment."""
+    with get_db() as conn:
+        conn.execute("UPDATE project_comments SET is_deleted = 1 WHERE id = ?",
+                    (comment_id,))
+    return True
+
+
+def update_comment(comment_id: int, comment_text: str) -> bool:
+    """Update a comment."""
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE project_comments SET comment_text = ?, updated_at = datetime('now') WHERE id = ?",
+            (comment_text, comment_id)
+        )
+    return True
+
+
+# ── Notifications ───────────────────────────────────────────────────────────
+
+def create_notification(user_id: int, ntype: str, project_id: int = None,
+                       actor_user_id: int = None, message: str = None) -> int:
+    """Create a notification for a user. Returns notification ID."""
+    with get_db() as conn:
+        cursor = conn.execute("""
+            INSERT INTO notifications
+            (user_id, type, project_id, actor_user_id, message)
+            VALUES (?, ?, ?, ?, ?)
+        """, (user_id, ntype, project_id, actor_user_id, message))
+        notif_id = cursor.lastrowid
+    return notif_id
+
+
+def get_user_notifications(user_id: int, unread_only: bool = False) -> list:
+    """Get notifications for a user."""
+    with get_db() as conn:
+        query = """
+            SELECT
+                n.id, n.user_id, n.project_id, n.type, n.actor_user_id,
+                n.message, n.is_read, n.created_at,
+                u.username, u.email, p.name as project_name
+            FROM notifications n
+            LEFT JOIN users u ON n.actor_user_id = u.id
+            LEFT JOIN projects p ON n.project_id = p.id
+            WHERE n.user_id = ?
+        """
+        params = [user_id]
+        if unread_only:
+            query += " AND n.is_read = 0"
+        query += " ORDER BY n.created_at DESC LIMIT 50"
+
+        notifs = conn.execute(query, params).fetchall()
+    return [dict(n) for n in notifs]
+
+
+def mark_notification_read(notification_id: int) -> bool:
+    """Mark a notification as read."""
+    with get_db() as conn:
+        conn.execute("UPDATE notifications SET is_read = 1 WHERE id = ?",
+                    (notification_id,))
+    return True
+
+
+def mark_all_notifications_read(user_id: int) -> bool:
+    """Mark all notifications as read for a user."""
+    with get_db() as conn:
+        conn.execute("UPDATE notifications SET is_read = 1 WHERE user_id = ?",
+                    (user_id,))
+    return True
+
+
+def get_unread_notification_count(user_id: int) -> int:
+    """Get count of unread notifications for a user."""
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) as cnt FROM notifications WHERE user_id = ? AND is_read = 0",
+            (user_id,)
+        ).fetchone()
+    return row['cnt'] if row else 0
+
+
+# ── Shared Documents ────────────────────────────────────────────────────────
+
+def add_shared_document(project_id: int, doc_type: str, external_url: str,
+                       external_id: str = None, title: str = None,
+                       added_by_user_id: int = None) -> int:
+    """Link a shared document (SharePoint/Drive) to a project. Returns document ID."""
+    with get_db() as conn:
+        cursor = conn.execute("""
+            INSERT INTO shared_documents
+            (project_id, doc_type, external_url, external_id, title, added_by_user_id)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (project_id, doc_type, external_url, external_id, title, added_by_user_id))
+        doc_id = cursor.lastrowid
+    return doc_id
+
+
+def get_shared_documents(project_id: int) -> list:
+    """Get all shared documents linked to a project."""
+    with get_db() as conn:
+        docs = conn.execute("""
+            SELECT
+                sd.id, sd.project_id, sd.doc_type, sd.external_url,
+                sd.external_id, sd.title, sd.added_by_user_id, sd.added_at,
+                u.username
+            FROM shared_documents sd
+            LEFT JOIN users u ON sd.added_by_user_id = u.id
+            WHERE sd.project_id = ?
+            ORDER BY sd.added_at DESC
+        """, (project_id,)).fetchall()
+    return [dict(d) for d in docs]
+
+
+def remove_shared_document(document_id: int) -> bool:
+    """Remove a shared document link from a project."""
+    with get_db() as conn:
+        conn.execute("DELETE FROM shared_documents WHERE id = ?", (document_id,))
+    return True
+
+
+# ── Helper Functions ────────────────────────────────────────────────────────────
+
+def get_project_comment(comment_id: int) -> dict | None:
+    """Get a single comment by ID."""
+    with get_db() as conn:
+        comment = conn.execute(
+            "SELECT * FROM project_comments WHERE id = ?",
+            (comment_id,)
+        ).fetchone()
+    return dict(comment) if comment else None
+
+
+
+
+def log_activity(project_id: int, event_type: str, description: str = None) -> bool:
+    """Log activity to project activity log."""
+    try:
+        with get_db() as conn:
+            conn.execute("""
+                INSERT INTO project_activity_log (project_id, event_type, description)
+                VALUES (?, ?, ?)
+            """, (project_id, event_type, description))
+        return True
+    except Exception as e:
+        print(f"[DB] Error logging activity: {e}")
+        return False
+
+
+# ── Capture Plans ────────────────────────────────────────────────────────────────
+
+def create_capture_plan(capture_name: str, capture_lead_id: int, created_by_user_id: int,
+                       solicitation_id: int = None, customer_name: str = None,
+                       customer_website: str = None, estimated_release_date: str = None,
+                       proposal_due_date: str = None, target_contract_value: float = None,
+                       stage: str = 'pre-release', confidence_level: str = 'medium',
+                       win_probability: int = 50) -> int:
+    """Create a new capture plan."""
+    with get_db() as conn:
+        cur = conn.execute("""
+            INSERT INTO capture_plans
+            (capture_name, capture_lead_id, created_by_user_id, solicitation_id,
+             customer_name, customer_website, estimated_release_date, proposal_due_date,
+             target_contract_value, stage, confidence_level, win_probability)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (capture_name, capture_lead_id, created_by_user_id, solicitation_id,
+              customer_name, customer_website, estimated_release_date, proposal_due_date,
+              target_contract_value, stage, confidence_level, win_probability))
+        return cur.lastrowid
+
+
+def get_capture_plan(plan_id: int) -> dict | None:
+    """Get a capture plan by ID."""
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM capture_plans WHERE id = ?", (plan_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def get_capture_plans_by_user(user_id: int, include_archived: bool = False) -> list:
+    """Get all capture plans accessible to a user (led or has access)."""
+    with get_db() as conn:
+        query = """
+            SELECT DISTINCT cp.* FROM capture_plans cp
+            LEFT JOIN capture_plan_access cpa ON cp.id = cpa.capture_plan_id
+            WHERE (cp.capture_lead_id = ? OR cpa.user_id = ?)
+        """
+        params = [user_id, user_id]
+
+        if not include_archived:
+            query += " AND cp.is_archived = 0"
+
+        query += " ORDER BY cp.updated_at DESC"
+
+        rows = conn.execute(query, params).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_capture_plans_by_stage(stage: str, user_id: int = None) -> list:
+    """Get capture plans by stage, optionally filtered by user."""
+    with get_db() as conn:
+        if user_id:
+            query = """
+                SELECT DISTINCT cp.* FROM capture_plans cp
+                LEFT JOIN capture_plan_access cpa ON cp.id = cpa.capture_plan_id
+                WHERE cp.stage = ? AND (cp.capture_lead_id = ? OR cpa.user_id = ?)
+                AND cp.is_archived = 0
+                ORDER BY cp.updated_at DESC
+            """
+            rows = conn.execute(query, (stage, user_id, user_id)).fetchall()
+        else:
+            query = """
+                SELECT * FROM capture_plans
+                WHERE stage = ? AND is_archived = 0
+                ORDER BY updated_at DESC
+            """
+            rows = conn.execute(query, (stage,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def update_capture_plan(plan_id: int, **kwargs) -> bool:
+    """Update capture plan fields."""
+    allowed_fields = {
+        'capture_name', 'customer_name', 'customer_website', 'estimated_release_date',
+        'proposal_due_date', 'target_contract_value', 'stage', 'confidence_level',
+        'win_probability', 'is_archived'
+    }
+
+    fields_to_update = {k: v for k, v in kwargs.items() if k in allowed_fields}
+
+    if not fields_to_update:
+        return False
+
+    fields_to_update['updated_at'] = 'datetime("now")'
+
+    with get_db() as conn:
+        set_clause = ', '.join([f"{k} = ?" if k != 'updated_at' else f"{k} = {v}"
+                                for k, v in fields_to_update.items()])
+        values = [v for k, v in fields_to_update.items() if k != 'updated_at']
+        values.append(plan_id)
+
+        conn.execute(f"UPDATE capture_plans SET {set_clause} WHERE id = ?", values)
+
+    return True
+
+
+def add_capture_plan_access(plan_id: int, user_id: int, access_level: str = 'viewer') -> bool:
+    """Add user access to a capture plan."""
+    with get_db() as conn:
+        try:
+            conn.execute("""
+                INSERT INTO capture_plan_access (capture_plan_id, user_id, access_level)
+                VALUES (?, ?, ?)
+            """, (plan_id, user_id, access_level))
+            return True
+        except Exception:
+            # Primary key violation means user already has access
+            return False
+
+
+def remove_capture_plan_access(plan_id: int, user_id: int) -> bool:
+    """Remove user access from a capture plan."""
+    with get_db() as conn:
+        conn.execute("""
+            DELETE FROM capture_plan_access
+            WHERE capture_plan_id = ? AND user_id = ?
+        """, (plan_id, user_id))
+    return True
+
+
+def get_capture_plan_access(plan_id: int, user_id: int) -> dict | None:
+    """Get access record for a user on a capture plan."""
+    with get_db() as conn:
+        row = conn.execute("""
+            SELECT * FROM capture_plan_access
+            WHERE capture_plan_id = ? AND user_id = ?
+        """, (plan_id, user_id)).fetchone()
+    return dict(row) if row else None
+
+
+def list_capture_plan_members(plan_id: int) -> list:
+    """Get all users with access to a capture plan."""
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT u.id, u.username, u.email, cpa.access_level, cpa.added_at
+            FROM capture_plan_access cpa
+            JOIN users u ON cpa.user_id = u.id
+            WHERE cpa.capture_plan_id = ?
+            ORDER BY cpa.added_at DESC
+        """, (plan_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def link_project_to_capture_plan(project_id: int, capture_plan_id: int) -> bool:
+    """Link a project to a capture plan."""
+    with get_db() as conn:
+        conn.execute("""
+            UPDATE projects SET capture_plan_id = ? WHERE id = ?
+        """, (capture_plan_id, project_id))
+    return True
+
+
+def get_projects_by_capture_plan(capture_plan_id: int) -> list:
+    """Get all projects linked to a capture plan."""
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT * FROM projects WHERE capture_plan_id = ? ORDER BY updated_at DESC
+        """, (capture_plan_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+# ── Project Team Management ────────────────────────────────────────────────────
+
+def add_team_member(project_id: int, user_id: int, role: str = 'team-member',
+                   added_by_user_id: int = None) -> bool:
+    """Add a user to a project team."""
+    with get_db() as conn:
+        try:
+            conn.execute("""
+                INSERT INTO project_team_members
+                (project_id, user_id, role, status, added_by_user_id)
+                VALUES (?, ?, ?, 'active', ?)
+            """, (project_id, user_id, role, added_by_user_id))
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"[DB] Error adding team member: {e}")
+            return False
+
+
+def remove_team_member(project_id: int, user_id: int) -> bool:
+    """Remove a user from a project team."""
+    with get_db() as conn:
+        try:
+            conn.execute(
+                "DELETE FROM project_team_members WHERE project_id = ? AND user_id = ?",
+                (project_id, user_id)
+            )
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"[DB] Error removing team member: {e}")
+            return False
+
+
+def get_project_team_members(project_id: int) -> list:
+    """Get all active team members for a project."""
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT ptm.*, u.username, u.email
+            FROM project_team_members ptm
+            JOIN users u ON ptm.user_id = u.id
+            WHERE ptm.project_id = ? AND ptm.status = 'active'
+            ORDER BY ptm.added_at DESC
+        """, (project_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def is_project_team_member(project_id: int, user_id: int) -> bool:
+    """Check if a user is an active member of a project team."""
+    with get_db() as conn:
+        row = conn.execute("""
+            SELECT 1 FROM project_team_members
+            WHERE project_id = ? AND user_id = ? AND status = 'active'
+        """, (project_id, user_id)).fetchone()
+    return row is not None
+
+
+def get_team_member_role(project_id: int, user_id: int) -> str | None:
+    """Get the role of a team member."""
+    with get_db() as conn:
+        row = conn.execute("""
+            SELECT role FROM project_team_members
+            WHERE project_id = ? AND user_id = ? AND status = 'active'
+        """, (project_id, user_id)).fetchone()
+    return row['role'] if row else None
+
+
+def update_team_member_role(project_id: int, user_id: int, role: str) -> bool:
+    """Update a team member's role."""
+    with get_db() as conn:
+        try:
+            conn.execute("""
+                UPDATE project_team_members
+                SET role = ? WHERE project_id = ? AND user_id = ? AND status = 'active'
+            """, (role, project_id, user_id))
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"[DB] Error updating team member role: {e}")
+            return False
+
+
+def send_team_invitation(project_id: int, invited_user_id: int,
+                        invited_by_user_id: int) -> bool:
+    """Send a team invitation to a user."""
+    with get_db() as conn:
+        try:
+            conn.execute("""
+                INSERT INTO project_team_invitations
+                (project_id, invited_user_id, invited_by_user_id)
+                VALUES (?, ?, ?)
+            """, (project_id, invited_user_id, invited_by_user_id))
+            conn.commit()
+
+            # Create notification
+            create_notification(
+                user_id=invited_user_id,
+                ntype='team_invitation',
+                project_id=project_id,
+                actor_user_id=invited_by_user_id,
+                message=f"You've been invited to join a project team"
+            )
+            return True
+        except Exception as e:
+            print(f"[DB] Error sending invitation: {e}")
+            return False
+
+
+def accept_team_invitation(project_id: int, user_id: int) -> bool:
+    """Accept a team invitation and add user to team."""
+    with get_db() as conn:
+        try:
+            # Check invitation exists
+            invitation = conn.execute("""
+                SELECT * FROM project_team_invitations
+                WHERE project_id = ? AND invited_user_id = ? AND status = 'pending'
+            """, (project_id, user_id)).fetchone()
+
+            if not invitation:
+                return False
+
+            # Add to team
+            conn.execute("""
+                INSERT INTO project_team_members
+                (project_id, user_id, role, status)
+                VALUES (?, ?, 'team-member', 'active')
+            """, (project_id, user_id))
+
+            # Mark invitation as accepted
+            conn.execute("""
+                UPDATE project_team_invitations
+                SET status = 'accepted', responded_at = datetime('now')
+                WHERE project_id = ? AND invited_user_id = ?
+            """, (project_id, user_id))
+
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"[DB] Error accepting invitation: {e}")
+            return False
+
+
+def decline_team_invitation(project_id: int, user_id: int) -> bool:
+    """Decline a team invitation."""
+    with get_db() as conn:
+        try:
+            conn.execute("""
+                UPDATE project_team_invitations
+                SET status = 'declined', responded_at = datetime('now')
+                WHERE project_id = ? AND invited_user_id = ?
+            """, (project_id, user_id))
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"[DB] Error declining invitation: {e}")
+            return False
+
+
+def get_pending_invitations(user_id: int) -> list:
+    """Get all pending team invitations for a user."""
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT pti.*, p.name as project_name, u.username as invited_by_username
+            FROM project_team_invitations pti
+            JOIN projects p ON pti.project_id = p.id
+            JOIN users u ON pti.invited_by_user_id = u.id
+            WHERE pti.invited_user_id = ? AND pti.status = 'pending'
+            ORDER BY pti.invited_at DESC
+        """, (user_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_project_invitations(project_id: int, status: str = 'pending') -> list:
+    """Get all invitations for a project."""
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT pti.*, u.username, u.email
+            FROM project_team_invitations pti
+            JOIN users u ON pti.invited_user_id = u.id
+            WHERE pti.project_id = ? AND pti.status = ?
+            ORDER BY pti.invited_at DESC
+        """, (project_id, status)).fetchall()
+    return [dict(r) for r in rows]
+
+
+# ── Proposal Scoring & Ranking System ──────────────────────────────────────
+
+def create_scoring_criteria(capture_plan_id: int, name: str, 
+                           description: str = None, weight: float = 1.0,
+                           max_score: float = 10.0, guidance: str = None,
+                           created_by_user_id: int = None) -> int | None:
+    """Create a new scoring criterion for a capture plan."""
+    with get_db() as conn:
+        try:
+            cursor = conn.execute("""
+                INSERT INTO scoring_criteria 
+                (capture_plan_id, name, description, weight, max_score, scoring_guidance, created_by_user_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (capture_plan_id, name, description, weight, max_score, guidance, created_by_user_id))
+            conn.commit()
+            return cursor.lastrowid
+        except Exception as e:
+            print(f"[DB] Error creating scoring criterion: {e}")
+            return None
+
+
+def get_scoring_criteria(capture_plan_id: int, active_only: bool = True) -> list:
+    """Get all scoring criteria for a capture plan."""
+    with get_db() as conn:
+        query = "SELECT * FROM scoring_criteria WHERE capture_plan_id = ?"
+        params = [capture_plan_id]
+        
+        if active_only:
+            query += " AND is_active = 1"
+        
+        query += " ORDER BY display_order, created_at"
+        rows = conn.execute(query, params).fetchall()
+    return [dict(r) for r in rows]
+
+
+def update_scoring_criteria(criterion_id: int, **updates) -> bool:
+    """Update a scoring criterion."""
+    allowed_fields = {'name', 'description', 'weight', 'max_score', 'scoring_guidance', 'is_active', 'display_order'}
+    updates = {k: v for k, v in updates.items() if k in allowed_fields}
+    
+    if not updates:
+        return False
+    
+    with get_db() as conn:
+        try:
+            set_clause = ", ".join([f"{k} = ?" for k in updates.keys()])
+            values = list(updates.values()) + [criterion_id]
+            conn.execute(f"UPDATE scoring_criteria SET {set_clause} WHERE id = ?", values)
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"[DB] Error updating criterion: {e}")
+            return False
+
+
+def delete_scoring_criteria(criterion_id: int) -> bool:
+    """Delete a scoring criterion (cascades to scores and rankings)."""
+    with get_db() as conn:
+        try:
+            conn.execute("DELETE FROM scoring_criteria WHERE id = ?", (criterion_id,))
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"[DB] Error deleting criterion: {e}")
+            return False
+
+
+def score_proposal(project_id: int, criterion_id: int, score_value: float,
+                   comments: str = None, scored_by_user_id: int = None) -> bool:
+    """Score a proposal against a criterion."""
+    with get_db() as conn:
+        try:
+            conn.execute("""
+                INSERT OR REPLACE INTO proposal_scores
+                (project_id, scoring_criterion_id, score_value, comments, scored_by_user_id, scored_at)
+                VALUES (?, ?, ?, ?, ?, datetime('now'))
+            """, (project_id, criterion_id, score_value, comments, scored_by_user_id))
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"[DB] Error scoring proposal: {e}")
+            return False
+
+
+def get_proposal_scores(project_id: int) -> dict:
+    """Get all scores for a proposal."""
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT ps.*, sc.name, sc.max_score, sc.weight, u.username as scored_by_username
+            FROM proposal_scores ps
+            JOIN scoring_criteria sc ON ps.scoring_criterion_id = sc.id
+            JOIN users u ON ps.scored_by_user_id = u.id
+            WHERE ps.project_id = ?
+            ORDER BY sc.display_order
+        """, (project_id,)).fetchall()
+    
+    scores_list = [dict(r) for r in rows]
+    
+    # Check if all criteria are scored
+    if scores_list:
+        capture_plan_id = conn.execute("""
+            SELECT cp.id FROM capture_plans cp
+            JOIN scoring_criteria sc ON sc.capture_plan_id = cp.id
+            WHERE sc.id = (SELECT scoring_criterion_id FROM proposal_scores WHERE project_id = ? LIMIT 1)
+        """, (project_id,)).fetchone()
+        
+        if capture_plan_id:
+            all_criteria = get_scoring_criteria(capture_plan_id[0])
+            scored_count = len(scores_list)
+            total_count = len(all_criteria)
+            complete = scored_count == total_count
+        else:
+            complete = False
+    else:
+        complete = False
+    
+    return {
+        'scores': scores_list,
+        'complete': complete,
+        'count': len(scores_list)
+    }
+
+
+def get_proposal_score(project_id: int, criterion_id: int) -> dict | None:
+    """Get a specific score."""
+    with get_db() as conn:
+        row = conn.execute("""
+            SELECT ps.*, sc.name, sc.max_score, sc.weight, u.username as scored_by_username
+            FROM proposal_scores ps
+            JOIN scoring_criteria sc ON ps.scoring_criterion_id = sc.id
+            JOIN users u ON ps.scored_by_user_id = u.id
+            WHERE ps.project_id = ? AND ps.scoring_criterion_id = ?
+        """, (project_id, criterion_id)).fetchone()
+    return dict(row) if row else None
+
+
+def delete_proposal_score(project_id: int, criterion_id: int) -> bool:
+    """Delete a score."""
+    with get_db() as conn:
+        try:
+            conn.execute("""
+                DELETE FROM proposal_scores
+                WHERE project_id = ? AND scoring_criterion_id = ?
+            """, (project_id, criterion_id))
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"[DB] Error deleting score: {e}")
+            return False
+
+
+def calculate_final_score(project_id: int) -> float | None:
+    """Calculate final weighted score for a proposal."""
+    with get_db() as conn:
+        result = conn.execute("""
+            SELECT 
+                SUM(ps.score_value * sc.weight) / SUM(sc.weight) as final_score
+            FROM proposal_scores ps
+            JOIN scoring_criteria sc ON ps.scoring_criterion_id = sc.id
+            WHERE ps.project_id = ? AND sc.is_active = 1
+        """, (project_id,)).fetchone()
+    
+    return result['final_score'] if result and result['final_score'] is not None else None
+
+
+def recalculate_rankings(capture_plan_id: int) -> bool:
+    """Recalculate all rankings for a capture plan."""
+    with get_db() as conn:
+        try:
+            # Get all projects in this capture plan with their final scores
+            projects = conn.execute("""
+                SELECT DISTINCT p.id, p.name
+                FROM projects p
+                JOIN proposal_scores ps ON p.id = ps.project_id
+                JOIN scoring_criteria sc ON ps.scoring_criterion_id = sc.id
+                WHERE sc.capture_plan_id = ?
+                GROUP BY p.id
+            """, (capture_plan_id,)).fetchall()
+            
+            scores_data = []
+            for project_row in projects:
+                project_id = project_row['id']
+                final_score = calculate_final_score(project_id)
+                
+                if final_score is not None:
+                    # Check if all criteria are scored
+                    all_criteria = get_scoring_criteria(capture_plan_id)
+                    scored = get_proposal_scores(project_id)
+                    complete = scored['complete']
+                    
+                    scores_data.append({
+                        'project_id': project_id,
+                        'final_score': final_score,
+                        'scores_complete': 1 if complete else 0,
+                        'last_scored_at': datetime.now().isoformat()
+                    })
+            
+            # Sort by score descending
+            scores_data.sort(key=lambda x: x['final_score'], reverse=True)
+            
+            # Clear existing rankings
+            conn.execute("DELETE FROM proposal_rankings WHERE capture_plan_id = ?", (capture_plan_id,))
+            
+            # Insert new rankings
+            total = len(scores_data)
+            for idx, score_data in enumerate(scores_data):
+                rank = idx + 1
+                percentile = ((total - rank) / total * 100) if total > 0 else 0
+                
+                conn.execute("""
+                    INSERT INTO proposal_rankings
+                    (capture_plan_id, project_id, final_score, rank, percentile, scores_complete, last_scored_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (capture_plan_id, score_data['project_id'], score_data['final_score'], 
+                      rank, percentile, score_data['scores_complete'], score_data['last_scored_at']))
+            
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"[DB] Error recalculating rankings: {e}")
+            return False
+
+
+def get_capture_plan_rankings(capture_plan_id: int, sort_by: str = 'rank') -> list:
+    """Get ranked list of proposals for a capture plan."""
+    with get_db() as conn:
+        query = """
+            SELECT pr.*, p.name as project_name, p.description
+            FROM proposal_rankings pr
+            JOIN projects p ON pr.project_id = p.id
+            WHERE pr.capture_plan_id = ?
+        """
+        
+        if sort_by == 'score':
+            query += " ORDER BY pr.final_score DESC"
+        elif sort_by == 'date':
+            query += " ORDER BY p.created_at DESC"
+        elif sort_by == 'name':
+            query += " ORDER BY p.name ASC"
+        else:  # default rank
+            query += " ORDER BY pr.rank ASC"
+        
+        rows = conn.execute(query, (capture_plan_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_proposal_ranking(project_id: int) -> dict | None:
+    """Get ranking info for a single proposal."""
+    with get_db() as conn:
+        row = conn.execute("""
+            SELECT pr.*, p.name as project_name
+            FROM proposal_rankings pr
+            JOIN projects p ON pr.project_id = p.id
+            WHERE pr.project_id = ?
+        """, (project_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def get_scoring_progress(capture_plan_id: int) -> dict:
+    """Get scoring progress statistics."""
+    with get_db() as conn:
+        # Get all projects linked to this capture plan
+        all_projects = conn.execute("""
+            SELECT DISTINCT p.id
+            FROM projects p
+            WHERE EXISTS (
+                SELECT 1 FROM scoring_criteria sc
+                WHERE sc.capture_plan_id = ?
+            )
+        """, (capture_plan_id,)).fetchall()
+        
+        total_proposals = len(all_projects)
+        
+        # Get scoring stats
+        stats = conn.execute("""
+            SELECT 
+                COUNT(DISTINCT CASE WHEN pr.scores_complete = 1 THEN pr.project_id END) as fully_scored,
+                COUNT(DISTINCT CASE WHEN pr.scores_complete = 0 AND pr.final_score IS NOT NULL THEN pr.project_id END) as partially_scored,
+                AVG(pr.final_score) as average_score,
+                MAX(pr.final_score) as high_score,
+                MIN(pr.final_score) as low_score
+            FROM proposal_rankings pr
+            WHERE pr.capture_plan_id = ?
+        """, (capture_plan_id,)).fetchone()
+        
+        fully_scored = stats['fully_scored'] or 0
+        partially_scored = stats['partially_scored'] or 0
+        unscored = total_proposals - fully_scored - partially_scored
+        
+        return {
+            'total_proposals': total_proposals,
+            'fully_scored': fully_scored,
+            'partially_scored': partially_scored,
+            'unscored': unscored,
+            'average_score': stats['average_score'] or 0,
+            'high_score': stats['high_score'] or 0,
+            'low_score': stats['low_score'] or 0
+        }
+
+
+def create_scoring_template(name: str, description: str = None,
+                           criteria: list = None,
+                           is_default: bool = False,
+                           created_by_user_id: int = None) -> int | None:
+    """Create a scoring template."""
+    with get_db() as conn:
+        try:
+            cursor = conn.execute("""
+                INSERT INTO scoring_templates (name, description, is_default, created_by_user_id)
+                VALUES (?, ?, ?, ?)
+            """, (name, description, 1 if is_default else 0, created_by_user_id))
+            template_id = cursor.lastrowid
+            
+            # Add criteria if provided
+            if criteria:
+                for idx, crit in enumerate(criteria):
+                    conn.execute("""
+                        INSERT INTO scoring_template_criteria
+                        (template_id, name, description, weight, max_score, scoring_guidance, display_order)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, (template_id, crit.get('name'), crit.get('description'),
+                          crit.get('weight', 1.0), crit.get('max_score', 10.0),
+                          crit.get('guidance'), idx))
+            
+            conn.commit()
+            return template_id
+        except Exception as e:
+            print(f"[DB] Error creating template: {e}")
+            return None
+
+
+def get_scoring_templates() -> list:
+    """Get all available scoring templates."""
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT st.*, COUNT(stc.id) as criteria_count
+            FROM scoring_templates st
+            LEFT JOIN scoring_template_criteria stc ON st.id = stc.template_id
+            GROUP BY st.id
+            ORDER BY st.is_default DESC, st.name
+        """).fetchall()
+    return [dict(r) for r in rows]
+
+
+def apply_template_to_capture_plan(template_id: int, capture_plan_id: int) -> bool:
+    """Apply a template's criteria to a capture plan."""
+    with get_db() as conn:
+        try:
+            # Get template criteria
+            template_criteria = conn.execute("""
+                SELECT * FROM scoring_template_criteria
+                WHERE template_id = ?
+                ORDER BY display_order
+            """, (template_id,)).fetchall()
+            
+            # Add each criterion to the capture plan
+            for idx, crit in enumerate(template_criteria):
+                conn.execute("""
+                    INSERT INTO scoring_criteria
+                    (capture_plan_id, name, description, weight, max_score, scoring_guidance, display_order)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (capture_plan_id, crit['name'], crit['description'],
+                      crit['weight'], crit['max_score'], crit['scoring_guidance'], idx))
+            
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"[DB] Error applying template: {e}")
+            return False
+
+
+# ── Task Management ────────────────────────────────────────────────────────────
+
+def create_task(data: dict) -> int | None:
+    """Create a new task. Returns the new task id."""
+    with get_db() as conn:
+        cur = conn.execute("""
+            INSERT INTO tasks
+                (title, description, project_id, deliverable,
+                 created_by_id, assigned_to_id,
+                 start_date, end_date, expire_date,
+                 status, priority, created_at, updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))
+        """, (
+            data.get("title"), data.get("description"),
+            data.get("project_id"), data.get("deliverable"),
+            data.get("created_by_id"), data.get("assigned_to_id") or None,
+            data.get("start_date") or None, data.get("end_date") or None,
+            data.get("expire_date") or None,
+            data.get("status", "active"), data.get("priority", "normal"),
+        ))
+        return cur.lastrowid
+
+
+def get_tasks(user_id=None, assigned_to_id=None, project_id=None,
+              status=None, include_expired=True, limit=200) -> list:
+    """Return tasks with creator and assignee names."""
+    sql = """
+        SELECT t.*,
+               u_c.username AS creator_name,
+               u_a.username AS assignee_name,
+               p.name       AS project_name,
+               CASE
+                 WHEN t.status NOT IN ('done','expired')
+                      AND t.expire_date IS NOT NULL
+                      AND t.expire_date < date('now') THEN 'expired'
+                 WHEN t.status NOT IN ('done','expired')
+                      AND t.end_date IS NOT NULL
+                      AND t.end_date < date('now')   THEN 'overdue'
+                 ELSE t.status
+               END AS computed_status
+        FROM tasks t
+        LEFT JOIN users   u_c ON t.created_by_id  = u_c.id
+        LEFT JOIN users   u_a ON t.assigned_to_id = u_a.id
+        LEFT JOIN projects p  ON t.project_id     = p.id
+        WHERE 1=1
+    """
+    params = []
+    if user_id is not None:
+        sql += " AND (t.created_by_id = ? OR t.assigned_to_id = ?)"
+        params += [user_id, user_id]
+    if assigned_to_id is not None:
+        sql += " AND t.assigned_to_id = ?"
+        params.append(assigned_to_id)
+    if project_id is not None:
+        sql += " AND t.project_id = ?"
+        params.append(project_id)
+    if status:
+        sql += " AND t.status = ?"
+        params.append(status)
+    if not include_expired:
+        sql += " AND t.status != 'expired'"
+    sql += " ORDER BY t.end_date IS NULL, t.end_date ASC, t.created_at DESC LIMIT ?"
+    params.append(limit)
+    with get_db() as conn:
+        rows = conn.execute(sql, params).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_task(task_id: int) -> dict | None:
+    with get_db() as conn:
+        row = conn.execute("""
+            SELECT t.*,
+                   u_c.username AS creator_name,
+                   u_a.username AS assignee_name,
+                   p.name       AS project_name,
+                   CASE
+                     WHEN t.status NOT IN ('done','expired')
+                          AND t.expire_date IS NOT NULL
+                          AND t.expire_date < date('now') THEN 'expired'
+                     WHEN t.status NOT IN ('done','expired')
+                          AND t.end_date IS NOT NULL
+                          AND t.end_date < date('now')   THEN 'overdue'
+                     ELSE t.status
+                   END AS computed_status
+            FROM tasks t
+            LEFT JOIN users    u_c ON t.created_by_id  = u_c.id
+            LEFT JOIN users    u_a ON t.assigned_to_id = u_a.id
+            LEFT JOIN projects p   ON t.project_id     = p.id
+            WHERE t.id = ?
+        """, (task_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def update_task(task_id: int, data: dict) -> bool:
+    with get_db() as conn:
+        conn.execute("""
+            UPDATE tasks SET
+                title=?, description=?, project_id=?, deliverable=?,
+                assigned_to_id=?, start_date=?, end_date=?, expire_date=?,
+                status=?, priority=?, updated_at=datetime('now')
+            WHERE id=?
+        """, (
+            data.get("title"), data.get("description"),
+            data.get("project_id") or None, data.get("deliverable"),
+            data.get("assigned_to_id") or None,
+            data.get("start_date") or None, data.get("end_date") or None,
+            data.get("expire_date") or None,
+            data.get("status"), data.get("priority", "normal"),
+            task_id,
+        ))
+    return True
+
+
+def delete_task(task_id: int) -> bool:
+    with get_db() as conn:
+        conn.execute("DELETE FROM tasks WHERE id=?", (task_id,))
+    return True
+
+
+def expire_stale_tasks() -> int:
+    """Mark tasks as expired when their expire_date has passed. Returns count updated."""
+    with get_db() as conn:
+        cur = conn.execute("""
+            UPDATE tasks SET status='expired', updated_at=datetime('now')
+            WHERE status NOT IN ('done','expired')
+              AND expire_date IS NOT NULL
+              AND expire_date < date('now')
+        """)
+        return cur.rowcount
+
+
+def get_task_counts_for_user(user_id: int) -> dict:
+    """Return summary counts for sidebar badge."""
+    with get_db() as conn:
+        row = conn.execute("""
+            SELECT
+              COUNT(*) FILTER (WHERE t.status NOT IN ('done','expired')
+                                 AND (t.end_date IS NULL OR t.end_date >= date('now'))
+                                 AND (t.expire_date IS NULL OR t.expire_date >= date('now'))) AS active,
+              COUNT(*) FILTER (WHERE t.status NOT IN ('done','expired')
+                                 AND t.end_date IS NOT NULL
+                                 AND t.end_date < date('now')
+                                 AND (t.expire_date IS NULL OR t.expire_date >= date('now'))) AS overdue
+            FROM tasks t
+            WHERE t.assigned_to_id = ? OR t.created_by_id = ?
+        """, (user_id, user_id)).fetchone()
+    return dict(row) if row else {"active": 0, "overdue": 0}
+
+
+# ── Project Checklist (enhanced with scheduling) ───────────────────────────────
+
+def update_checklist_schedule(item_id: int, assigned_to_id, start_date, end_date,
+                               estimated_hours, actual_hours) -> bool:
+    """Update scheduling fields on a checklist item."""
+    with get_db() as conn:
+        conn.execute("""
+            UPDATE project_checklist_items
+            SET assigned_to_id=?, start_date=?, end_date=?,
+                estimated_hours=?, actual_hours=?
+            WHERE id=?
+        """, (
+            assigned_to_id or None,
+            start_date or None,
+            end_date or None,
+            estimated_hours or 0,
+            actual_hours or 0,
+            item_id,
+        ))
+    return True
+
+
+def get_checklist_items_for_gantt(project_id: int) -> list:
+    """Return checklist items that have dates, with assignee info, for Gantt rendering."""
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT ci.*, u.username AS assignee_name
+            FROM project_checklist_items ci
+            LEFT JOIN users u ON ci.assigned_to_id = u.id
+            WHERE ci.project_id = ?
+              AND ci.start_date IS NOT NULL
+              AND ci.end_date IS NOT NULL
+            ORDER BY ci.start_date ASC, ci.sort_order ASC
+        """, (project_id,)).fetchall()
+    return [dict(r) for r in rows]

@@ -1,0 +1,383 @@
+{% extends "base.html" %}
+{% block title %}Tasks — CaptureIQ{% endblock %}
+
+{% block content %}
+<div class="topbar">
+  <i class="bi bi-check2-square text-primary fs-5"></i>
+  <h1>Tasks</h1>
+  {% if counts.overdue > 0 %}
+    <span class="badge bg-danger ms-1">{{ counts.overdue }} overdue</span>
+  {% endif %}
+  <button class="btn btn-primary btn-sm ms-auto" data-bs-toggle="modal" data-bs-target="#taskModal">
+    <i class="bi bi-plus-lg"></i> New Task
+  </button>
+</div>
+
+<!-- ── View filters ─────────────────────────────────────────────────────────── -->
+<div class="d-flex gap-2 mb-3 flex-wrap">
+  <a href="{{ url_for('tasks', view='mine') }}"
+     class="btn btn-sm {{ 'btn-primary' if view == 'mine' else 'btn-outline-secondary' }}">
+    <i class="bi bi-person-fill"></i> My Tasks
+  </a>
+  <a href="{{ url_for('tasks', view='assigned') }}"
+     class="btn btn-sm {{ 'btn-primary' if view == 'assigned' else 'btn-outline-secondary' }}">
+    <i class="bi bi-arrow-down-circle"></i> Assigned to Me
+  </a>
+  <a href="{{ url_for('tasks', view='all') }}"
+     class="btn btn-sm {{ 'btn-primary' if view == 'all' else 'btn-outline-secondary' }}">
+    <i class="bi bi-grid"></i> All Tasks
+  </a>
+
+  <div class="ms-auto d-flex gap-1">
+    <select id="statusFilter" class="form-select form-select-sm" style="width:auto"
+            onchange="applyFilter()">
+      <option value="" {{ 'selected' if not sel_status }}>All Statuses</option>
+      <option value="active"  {{ 'selected' if sel_status == 'active' }}>Active</option>
+      <option value="done"    {{ 'selected' if sel_status == 'done'   }}>Done</option>
+      <option value="expired" {{ 'selected' if sel_status == 'expired'}}>Expired</option>
+    </select>
+    <select id="projFilter" class="form-select form-select-sm" style="width:auto"
+            onchange="applyFilter()">
+      <option value="">All Projects</option>
+      {% for p in projects %}
+        <option value="{{ p.id }}" {{ 'selected' if sel_project_id == p.id }}>{{ p.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+</div>
+
+<!-- ── Task table ───────────────────────────────────────────────────────────── -->
+<div class="table-card">
+  <table class="table table-hover align-middle mb-0">
+    <thead>
+      <tr>
+        <th style="width:36px"></th>
+        <th>Title</th>
+        <th>Project / Deliverable</th>
+        <th>Assigned To</th>
+        <th>Priority</th>
+        <th>Start</th>
+        <th>Due</th>
+        <th>Expires</th>
+        <th>Status</th>
+        <th style="width:90px"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in task_list %}
+      {% set cs = t.computed_status %}
+      <tr class="{{ 'table-danger' if cs == 'overdue' else 'table-secondary' if cs == 'expired' else '' }}">
+        <td class="text-center">
+          {% if cs == 'done' %}
+            <i class="bi bi-check-circle-fill text-success"></i>
+          {% elif cs == 'overdue' %}
+            <i class="bi bi-exclamation-circle-fill text-danger"></i>
+          {% elif cs == 'expired' %}
+            <i class="bi bi-x-circle-fill text-secondary"></i>
+          {% else %}
+            <i class="bi bi-circle text-muted"></i>
+          {% endif %}
+        </td>
+        <td>
+          <div class="fw-semibold">{{ t.title }}</div>
+          {% if t.description %}
+            <small class="text-muted">{{ t.description[:80] }}{% if t.description|length > 80 %}…{% endif %}</small>
+          {% endif %}
+        </td>
+        <td>
+          {% if t.project_name %}
+            <a href="{{ url_for('project_detail', project_id=t.project_id) }}"
+               class="text-decoration-none small">
+              <i class="bi bi-folder2-open text-muted me-1"></i>{{ t.project_name }}
+            </a>
+          {% endif %}
+          {% if t.deliverable %}
+            <br><small class="text-muted"><i class="bi bi-file-earmark me-1"></i>{{ t.deliverable }}</small>
+          {% endif %}
+          {% if not t.project_name and not t.deliverable %}—{% endif %}
+        </td>
+        <td>
+          {% if t.assignee_name %}
+            <span class="badge bg-secondary">{{ t.assignee_name }}</span>
+          {% else %}
+            <span class="text-muted small">—</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if t.priority == 'high' %}
+            <span class="badge bg-danger">High</span>
+          {% elif t.priority == 'low' %}
+            <span class="badge bg-light text-muted">Low</span>
+          {% else %}
+            <span class="badge bg-secondary">Normal</span>
+          {% endif %}
+        </td>
+        <td class="small text-muted">{{ t.start_date or '—' }}</td>
+        <td class="small {{ 'text-danger fw-semibold' if cs == 'overdue' else 'text-muted' }}">
+          {{ t.end_date or '—' }}
+        </td>
+        <td class="small text-muted">{{ t.expire_date or '—' }}</td>
+        <td>
+          {% if cs == 'done' %}
+            <span class="badge bg-success">Done</span>
+          {% elif cs == 'overdue' %}
+            <span class="badge bg-danger">Overdue</span>
+          {% elif cs == 'expired' %}
+            <span class="badge bg-secondary">Expired</span>
+          {% else %}
+            <span class="badge bg-primary">Active</span>
+          {% endif %}
+        </td>
+        <td class="text-end" style="white-space:nowrap">
+          <!-- Mark done / reopen -->
+          {% if cs != 'done' and cs != 'expired' %}
+          <form method="post" action="{{ url_for('update_task_status', task_id=t.id) }}" class="d-inline">
+            <input type="hidden" name="status" value="done">
+            <button type="submit" class="btn btn-outline-success btn-sm py-0" title="Mark Done">
+              <i class="bi bi-check-lg"></i>
+            </button>
+          </form>
+          {% endif %}
+          <!-- Edit (creator or admin) -->
+          {% if t.created_by_id == current_user.id or current_user.is_admin %}
+          <button class="btn btn-outline-primary btn-sm py-0"
+                  title="Edit"
+                  onclick="openEditModal({{ t | tojson }})">
+            <i class="bi bi-pencil"></i>
+          </button>
+          <form method="post" action="{{ url_for('delete_task', task_id=t.id) }}" class="d-inline"
+                onsubmit="return confirm('Delete this task?')">
+            <button type="submit" class="btn btn-outline-danger btn-sm py-0" title="Delete">
+              <i class="bi bi-trash3"></i>
+            </button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="10" class="text-center text-muted py-5">
+          <i class="bi bi-check2-square fs-2 d-block mb-2"></i>
+          No tasks found.
+          <button class="btn btn-primary btn-sm ms-2" data-bs-toggle="modal" data-bs-target="#taskModal">
+            Create your first task
+          </button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- ── Create Task Modal ─────────────────────────────────────────────────────── -->
+<div class="modal fade" id="taskModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <form method="post" action="{{ url_for('create_task') }}">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-plus-circle text-primary me-2"></i>New Task</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Title <span class="text-danger">*</span></label>
+            <input type="text" name="title" class="form-control" required placeholder="Short task title…">
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Instructions / Description</label>
+            <textarea name="description" class="form-control" rows="3"
+                      placeholder="Detailed instructions for completing this task…"></textarea>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Project</label>
+              <select name="project_id" class="form-select form-select-sm">
+                <option value="">— None —</option>
+                {% for p in projects %}
+                  <option value="{{ p.id }}">{{ p.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Deliverable / Section</label>
+              <input type="text" name="deliverable" class="form-control form-control-sm"
+                     placeholder="e.g. Technical Approach section">
+            </div>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Assign To</label>
+              <select name="assigned_to_id" class="form-select form-select-sm">
+                <option value="">— Unassigned —</option>
+                {% for u in users %}
+                  {% if u.is_active and not u.role == 'admin' %}
+                    <option value="{{ u.id }}">{{ u.username }}</option>
+                  {% endif %}
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Priority</label>
+              <select name="priority" class="form-select form-select-sm">
+                <option value="normal">Normal</option>
+                <option value="high">High</option>
+                <option value="low">Low</option>
+              </select>
+            </div>
+          </div>
+          <div class="row g-2 mb-2">
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Start Date</label>
+              <input type="date" name="start_date" class="form-control form-control-sm">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Due Date</label>
+              <input type="date" name="end_date" class="form-control form-control-sm">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Expire Date
+                <span class="text-muted fw-normal" style="font-size:.72rem">(auto-expire if not done)</span>
+              </label>
+              <input type="date" name="expire_date" class="form-control form-control-sm">
+            </div>
+          </div>
+          <div class="form-text text-muted">
+            <i class="bi bi-info-circle me-1"></i>
+            <strong>Due Date</strong> — task becomes Overdue if not done by this date.
+            <strong>Expire Date</strong> — task auto-expires (e.g. proposal deadline passed), removing it from active lists.
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>Create Task</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ── Edit Task Modal ───────────────────────────────────────────────────────── -->
+<div class="modal fade" id="editTaskModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <form method="post" id="editTaskForm" action="">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-pencil text-primary me-2"></i>Edit Task</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Title <span class="text-danger">*</span></label>
+            <input type="text" name="title" id="et_title" class="form-control" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Instructions / Description</label>
+            <textarea name="description" id="et_description" class="form-control" rows="3"></textarea>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Project</label>
+              <select name="project_id" id="et_project_id" class="form-select form-select-sm">
+                <option value="">— None —</option>
+                {% for p in projects %}
+                  <option value="{{ p.id }}">{{ p.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Deliverable / Section</label>
+              <input type="text" name="deliverable" id="et_deliverable" class="form-control form-control-sm">
+            </div>
+          </div>
+          <div class="row g-2 mb-3">
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Assign To</label>
+              <select name="assigned_to_id" id="et_assigned_to_id" class="form-select form-select-sm">
+                <option value="">— Unassigned —</option>
+                {% for u in users %}
+                  {% if u.is_active and not u.role == 'admin' %}
+                    <option value="{{ u.id }}">{{ u.username }}</option>
+                  {% endif %}
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Priority</label>
+              <select name="priority" id="et_priority" class="form-select form-select-sm">
+                <option value="normal">Normal</option>
+                <option value="high">High</option>
+                <option value="low">Low</option>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Status</label>
+              <select name="status" id="et_status" class="form-select form-select-sm">
+                <option value="active">Active</option>
+                <option value="done">Done</option>
+                <option value="expired">Expired</option>
+              </select>
+            </div>
+          </div>
+          <div class="row g-2">
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Start Date</label>
+              <input type="date" name="start_date" id="et_start_date" class="form-control form-control-sm">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Due Date</label>
+              <input type="date" name="end_date" id="et_end_date" class="form-control form-control-sm">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label fw-semibold">Expire Date</label>
+              <input type="date" name="expire_date" id="et_expire_date" class="form-control form-control-sm">
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-1"></i>Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function applyFilter() {
+  const status  = document.getElementById('statusFilter').value;
+  const proj    = document.getElementById('projFilter').value;
+  const view    = new URLSearchParams(window.location.search).get('view') || 'mine';
+  let url = `/tasks?view=${view}`;
+  if (status) url += `&status=${status}`;
+  if (proj)   url += `&project_id=${proj}`;
+  location.href = url;
+}
+
+function openEditModal(task) {
+  document.getElementById('editTaskForm').action = `/tasks/${task.id}/edit`;
+  document.getElementById('et_title').value          = task.title || '';
+  document.getElementById('et_description').value    = task.description || '';
+  document.getElementById('et_deliverable').value    = task.deliverable || '';
+  document.getElementById('et_start_date').value     = task.start_date || '';
+  document.getElementById('et_end_date').value       = task.end_date || '';
+  document.getElementById('et_expire_date').value    = task.expire_date || '';
+
+  const projSel = document.getElementById('et_project_id');
+  projSel.value = task.project_id || '';
+
+  const assignSel = document.getElementById('et_assigned_to_id');
+  assignSel.value = task.assigned_to_id || '';
+
+  const prioSel = document.getElementById('et_priority');
+  prioSel.value = task.priority || 'normal';
+
+  const statusSel = document.getElementById('et_status');
+  statusSel.value = task.status || 'active';
+
+  new bootstrap.Modal(document.getElementById('editTaskModal')).show();
+}
+</script>
+{% endblock %}
