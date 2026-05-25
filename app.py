@@ -249,6 +249,12 @@ _USER_ONLY_ENDPOINTS = {
     # Task management
     "tasks", "create_task", "edit_task", "delete_task", "update_task_status",
     "update_checklist_schedule",
+    # Capture plan actions
+    "link_project_from_capture", "add_key_contact", "delete_key_contact",
+    "all_key_contacts",
+    # Ingest jobs
+    "ingest_jobs", "create_ingest_job", "edit_ingest_job", "toggle_ingest_job", "delete_ingest_job",
+    "run_ingest_job_now",
 }
 
 # Endpoints that only admins can access
@@ -256,7 +262,7 @@ _ADMIN_ONLY_ENDPOINTS = {
     "admin_users", "admin_create_user", "admin_toggle_user",
     "admin_delete_user", "admin_reset_password", "admin_unlock_user",
     "admin_audit_log", "admin_audit_log_export",
-    "admin_db", "admin_db_backup", "admin_db_purge_topics",
+    "admin_db", "admin_db_backup", "admin_db_import", "admin_db_purge_topics",
     "admin_settings", "admin_save_settings", "admin_save_smtp",
     "admin_pending_registrations", "admin_approve_registration", "admin_reject_registration",
 }
@@ -633,7 +639,12 @@ def admin_create_user():
     elif len(password) < 6:
         flash("Password must be at least 6 characters.", "danger")
     else:
-        db.create_user(username, email, generate_password_hash(password), role)
+        actual_role = "user" if role == "capture_manager" else role
+        new_user_id = db.create_user(username, email, generate_password_hash(password), actual_role)
+        # If capture_manager role selected, elevate the user
+        if role == "capture_manager" and new_user_id:
+            with db.get_db() as conn:
+                conn.execute("UPDATE users SET is_capture_manager=1 WHERE id=?", (new_user_id,))
         db.write_audit_log("USER_CREATED",
                            username=current_user.username, user_id=current_user.id,
                            detail=f"Created user '{username}' with role '{role}'",
@@ -918,7 +929,8 @@ def admin_db():
     if not current_user.is_admin:
         return redirect(url_for("dashboard"))
     stats = db.get_db_stats()
-    return render_template("admin_db.html", stats=stats)
+    backup_log = db.get_backup_log()
+    return render_template("admin_db.html", stats=stats, backup_log=backup_log)
 
 
 @app.route("/admin/db/backup")
@@ -931,7 +943,35 @@ def admin_db_backup():
                        username=current_user.username, user_id=current_user.id,
                        detail="Manual database backup downloaded",
                        ip_address=request.remote_addr)
+    import os as _os
+    db.log_db_backup(filename=filename, size_bytes=_os.path.getsize(db.DB_PATH), user_id=current_user.id)
     return send_file(db.DB_PATH, as_attachment=True, download_name=filename)
+
+
+@app.route("/admin/db/import", methods=["POST"])
+@login_required
+def admin_db_import():
+    if not current_user.is_admin:
+        abort(403)
+    f = request.files.get("db_file")
+    if not f or not f.filename.endswith(".db"):
+        flash("Please upload a valid .db file.", "danger")
+        return redirect(url_for("admin_db"))
+    import shutil as _shutil, os as _os
+    db_path = db.DB_PATH
+    backup_path = db_path + ".pre_import_backup"
+    _shutil.copy2(db_path, backup_path)
+    try:
+        f.save(db_path)
+        db.write_audit_log("DB_IMPORTED", username=current_user.username,
+                          user_id=current_user.id,
+                          detail="Database restored from uploaded file",
+                          ip_address=request.remote_addr)
+        flash("Database imported successfully. A backup of the previous database was saved.", "success")
+    except Exception as e:
+        _shutil.copy2(backup_path, db_path)
+        flash(f"Import failed: {str(e)}. Previous database restored.", "danger")
+    return redirect(url_for("admin_db"))
 
 
 # ── Admin — Settings ───────────────────────────────────────────────────────────
@@ -1051,6 +1091,7 @@ def admin_save_smtp():
 
 
 @app.route("/help/user-guide")
+@app.route("/guide")
 @login_required
 def user_guide():
     """Display the user guide."""
@@ -1065,9 +1106,23 @@ def dashboard():
     stats = db.get_stats(user_id=current_user.id)
     capture_stats = db.get_capture_stats()
     pending_invitations = db.get_pending_invitations(current_user.id)
+    # Compute total pipeline value from active capture plans
+    pipeline_value = 0
+    try:
+        with db.get_db() as conn:
+            row = conn.execute("""
+                SELECT COALESCE(SUM(target_contract_value),0) as total
+                FROM capture_plans WHERE is_archived=0 OR is_archived IS NULL
+            """).fetchone()
+            pipeline_value = row['total'] if row else 0
+    except Exception:
+        pipeline_value = 0
+    pipeline_value_fmt = "{:,.0f}".format(pipeline_value)
     return render_template("dashboard.html", stats=stats, jobs=_jobs,
                            capture_stats=capture_stats,
-                           pending_invitations=pending_invitations)
+                           pending_invitations=pending_invitations,
+                           pipeline_value=pipeline_value,
+                           pipeline_value_fmt=pipeline_value_fmt)
 
 
 # ── Capture Management ─────────────────────────────────────────────────────────
@@ -1170,12 +1225,28 @@ def capture_plan_detail(plan_id):
     if plan['solicitation_id']:
         solicitation = db.get_topic(plan['solicitation_id'])
 
+    # Populate Add Member modal
+    all_users = db.get_all_users()
+    member_ids = {m['id'] for m in members}
+    available_members = [u for u in all_users if u['is_active'] and u['id'] not in member_ids]
+
+    # Populate Link Project modal
+    all_projects = db.get_projects_by_owner(current_user.id)
+    linked_ids = {p['id'] for p in linked_projects}
+    available_projects = [p for p in all_projects if p['id'] not in linked_ids]
+
+    # Get key contacts
+    key_contacts = db.get_key_contacts(plan_id)
+
     return render_template("capture/plan_detail.html",
                          plan=plan,
                          solicitation=solicitation,
                          linked_projects=linked_projects,
                          members=members,
-                         is_owner=plan['capture_lead_id'] == current_user.id or current_user.is_admin)
+                         is_owner=plan['capture_lead_id'] == current_user.id or current_user.is_admin,
+                         available_members=available_members,
+                         available_projects=available_projects,
+                         key_contacts=key_contacts)
 
 
 @app.route("/capture/<int:plan_id>/edit", methods=["POST"])
@@ -1323,6 +1394,84 @@ def remove_capture_plan_member(plan_id, member_id):
         return jsonify({"status": "success"})
     else:
         return redirect(url_for("capture_plan_detail", plan_id=plan_id))
+
+
+@app.route("/capture/<int:plan_id>/link-project", methods=["POST"])
+@login_required
+@require_capture_manager
+def link_project_from_capture(plan_id):
+    plan = db.get_capture_plan(plan_id)
+    if not plan:
+        abort(404)
+    if plan['capture_lead_id'] != current_user.id and not current_user.is_admin:
+        abort(403)
+    project_id = request.form.get("project_id", type=int)
+    if project_id:
+        db.link_project_to_capture_plan(project_id, plan_id)
+        flash("Project linked successfully.", "success")
+    return redirect(url_for("capture_plan_detail", plan_id=plan_id))
+
+
+@app.route("/capture/<int:plan_id>/contacts/add", methods=["POST"])
+@login_required
+@require_capture_manager
+def add_key_contact(plan_id):
+    plan = db.get_capture_plan(plan_id)
+    if not plan:
+        abort(404)
+    db.add_key_contact(
+        capture_plan_id=plan_id,
+        first_name=request.form.get("first_name", "").strip(),
+        last_name=request.form.get("last_name", "").strip(),
+        email=request.form.get("email", "").strip() or None,
+        phone=request.form.get("phone", "").strip() or None,
+        agency=request.form.get("agency", "").strip() or None,
+        title=request.form.get("title", "").strip() or None,
+        notes=request.form.get("notes", "").strip() or None,
+        last_contacted=request.form.get("last_contacted") or None,
+        record_owner_id=current_user.id
+    )
+    flash("Contact added.", "success")
+    return redirect(url_for("capture_plan_detail", plan_id=plan_id) + "#contacts")
+
+
+@app.route("/capture/contacts/<int:contact_id>/delete", methods=["POST"])
+@login_required
+@require_capture_manager
+def delete_key_contact(contact_id):
+    with db.get_db() as conn:
+        row = conn.execute("SELECT capture_plan_id FROM key_contacts WHERE id=?", (contact_id,)).fetchone()
+    plan_id = row['capture_plan_id'] if row else None
+    db.delete_key_contact(contact_id)
+    flash("Contact removed.", "info")
+    if plan_id:
+        return redirect(url_for("capture_plan_detail", plan_id=plan_id) + "#contacts")
+    return redirect(url_for("capture_dashboard"))
+
+
+@app.route("/contacts")
+@login_required
+@require_capture_manager
+def all_key_contacts():
+    search = request.args.get("q", "").strip()
+    agency = request.args.get("agency", "").strip()
+    sort = request.args.get("sort", "last_name")
+    contacts = db.get_key_contacts()
+    if search:
+        sl = search.lower()
+        contacts = [c for c in contacts if sl in (c.get('first_name') or '').lower()
+                    or sl in (c.get('last_name') or '').lower()
+                    or sl in (c.get('agency') or '').lower()
+                    or sl in (c.get('email') or '').lower()]
+    if agency:
+        contacts = [c for c in contacts if agency.lower() in (c.get('agency') or '').lower()]
+    valid_sorts = ['last_name', 'first_name', 'agency', 'record_owner_name']
+    if sort not in valid_sorts:
+        sort = 'last_name'
+    contacts.sort(key=lambda c: (c.get(sort) or '').lower())
+    agencies = sorted({c['agency'] for c in db.get_key_contacts() if c.get('agency')})
+    return render_template("contacts.html", contacts=contacts, agencies=agencies,
+                           search=search, agency=agency, sort=sort)
 
 
 @app.route("/project/<int:project_id>/link-capture-plan", methods=["POST"])
@@ -1932,6 +2081,75 @@ def search():
 
 # ── Ingestion ──────────────────────────────────────────────────────────────────
 
+@app.route("/ingest/jobs")
+@login_required
+def ingest_jobs():
+    jobs = db.get_ingest_jobs()
+    sources = ["sbir.gov", "Navy", "DoD SBIR/STTR"]
+    return render_template("ingest_jobs.html", jobs=jobs, sources=sources)
+
+
+@app.route("/ingest/jobs/create", methods=["POST"])
+@login_required
+def create_ingest_job():
+    source = request.form.get("source", "").strip()
+    schedule_type = request.form.get("schedule_type", "daily")
+    run_time = request.form.get("run_time", "02:00")
+    run_days = request.form.get("run_days", "daily")
+    if source:
+        db.create_ingest_job(source, schedule_type, run_time, run_days, current_user.id)
+        flash(f"Automated job created for {source}.", "success")
+    return redirect(url_for("ingest_jobs"))
+
+
+@app.route("/ingest/jobs/<int:job_id>/edit", methods=["POST"])
+@login_required
+def edit_ingest_job(job_id):
+    db.update_ingest_job(job_id,
+        source=request.form.get("source"),
+        schedule_type=request.form.get("schedule_type"),
+        run_time=request.form.get("run_time"),
+        run_days=request.form.get("run_days"))
+    flash("Job updated.", "success")
+    return redirect(url_for("ingest_jobs"))
+
+
+@app.route("/ingest/jobs/<int:job_id>/toggle", methods=["POST"])
+@login_required
+def toggle_ingest_job(job_id):
+    with db.get_db() as conn:
+        row = conn.execute("SELECT is_active FROM scheduled_ingest_jobs WHERE id=?", (job_id,)).fetchone()
+    if row:
+        db.update_ingest_job(job_id, is_active=not row['is_active'])
+    return redirect(url_for("ingest_jobs"))
+
+
+@app.route("/ingest/jobs/<int:job_id>/delete", methods=["POST"])
+@login_required
+def delete_ingest_job(job_id):
+    db.delete_ingest_job(job_id)
+    flash("Job deleted.", "info")
+    return redirect(url_for("ingest_jobs"))
+
+
+@app.route("/ingest/jobs/<int:job_id>/run", methods=["POST"])
+@login_required
+def run_ingest_job_now(job_id):
+    """Immediately trigger an ingest job in a background thread."""
+    jobs = db.get_ingest_jobs()
+    job = next((j for j in jobs if j["id"] == job_id), None)
+    if job:
+        threading.Thread(
+            target=_run_ingest_job,
+            args=(job["source"], job["id"]),
+            daemon=True
+        ).start()
+        flash(f"Job '{job['source']}' started — check back shortly for status.", "info")
+    else:
+        flash("Job not found.", "danger")
+    return redirect(url_for("ingest_jobs"))
+
+
 @app.route("/ingest")
 @login_required
 def ingest_page():
@@ -2161,6 +2379,11 @@ def create_project():
 
     # Set the current user as the project owner
     db.set_project_owner(project_id, current_user.id)
+
+    # Auto-add the creator as an active team member (lead role) so they
+    # can access the team page and appear in team listings immediately
+    db.add_team_member(project_id, current_user.id, role='lead',
+                       added_by_user_id=current_user.id)
 
     # Log the action
     db.log_activity(project_id, "created", f"Project created by {current_user.username}")
@@ -2728,11 +2951,16 @@ def project_team(project_id: int):
     can_manage = (project.get('created_by_user_id') == current_user.id or
                   current_user.is_admin)
 
+    all_users = [u for u in db.get_all_users() if u['is_active']]
+    team_ids = {m['user_id'] for m in team_members}
+    available_users = [u for u in all_users if u['id'] not in team_ids]
+
     return render_template("project_team.html",
                          project=project,
                          team_members=team_members,
                          pending_invitations=pending_invitations,
-                         can_manage=can_manage)
+                         can_manage=can_manage,
+                         available_users=available_users)
 
 
 @app.route("/projects/<int:project_id>/team/invite", methods=["POST"])
@@ -2951,10 +3179,126 @@ def api_awards():
     return jsonify(rows)
 
 
+# ── Automated Ingest Job Scheduler ────────────────────────────────────────────
+
+def _run_ingest_job(source: str, job_db_id: int):
+    """Execute an ingest job for the given source and update last_run / last_status in DB."""
+    now = datetime.now().isoformat()  # local time, matches scheduler tick comparison
+    status = "error"
+    try:
+        src = source.lower()
+        if "navy" in src:
+            from ingestors import navy_sbir
+            navy_sbir.ingest(max_topics=200)
+        elif "dod" in src:
+            from ingestors import dod_sbirsttr
+            dod_sbirsttr.ingest(max_records=200)
+        elif "sbir.gov" in src or "sbir gov" in src:
+            from ingestors import sbir_gov
+            sbir_gov.ingest_topics(limit=200)
+        status = "success"
+        print(f"[Scheduler] Job {job_db_id} ({source}) completed successfully.")
+    except Exception as e:
+        print(f"[Scheduler] Job {job_db_id} ({source}) failed: {e}")
+    finally:
+        with db.get_db() as conn:
+            conn.execute(
+                "UPDATE scheduled_ingest_jobs SET last_run=?, last_status=?, updated_at=? WHERE id=?",
+                (now, status, now, job_db_id)
+            )
+
+
+def _scheduler_loop():
+    """Background thread: checks every 60s for jobs due to run.
+    Uses local machine time so run_time values set in the UI match the user's timezone.
+    """
+    import time as _time
+    from datetime import datetime as _dt
+    print("[Scheduler] Automated ingest scheduler started (local time).")
+    while True:
+        try:
+            # Use local time so scheduled times match what the user configured in the UI
+            now = _dt.now()
+            day_name = now.strftime("%A").lower()   # e.g. "monday"
+            hm = now.strftime("%H:%M")               # e.g. "14:30"
+            print(f"[Scheduler] Tick — local time: {now.strftime('%Y-%m-%d %H:%M')}, checking jobs...")
+
+            jobs = db.get_ingest_jobs()
+            for job in jobs:
+                if not job.get("is_active"):
+                    continue
+
+                run_time  = (job.get("run_time") or "02:00").strip()
+                run_days  = (job.get("run_days") or "daily").strip().lower()
+                sched     = (job.get("schedule_type") or "daily").strip().lower()
+
+                print(f"[Scheduler]   Job {job['id']} ({job['source']}): run_time={run_time}, now={hm}, match={run_time == hm}")
+
+                # Check time window (within the current minute)
+                if run_time != hm:
+                    continue
+
+                # Check day
+                if sched == "monthly":
+                    if now.day != 1:
+                        print(f"[Scheduler]   Job {job['id']}: monthly but not 1st of month, skipping.")
+                        continue
+                elif run_days == "weekdays":
+                    if day_name not in ("monday","tuesday","wednesday","thursday","friday"):
+                        print(f"[Scheduler]   Job {job['id']}: weekdays only, today is {day_name}, skipping.")
+                        continue
+                elif run_days not in ("daily",):
+                    # Specific day like "monday", "tuesday" etc.
+                    if run_days != day_name:
+                        print(f"[Scheduler]   Job {job['id']}: scheduled for {run_days}, today is {day_name}, skipping.")
+                        continue
+                # "daily" falls through — always fires at the right time
+
+                # Avoid double-firing in the same minute
+                last_run = job.get("last_run") or ""
+                this_minute = now.strftime("%Y-%m-%dT%H:%M")
+                if last_run.startswith(this_minute):
+                    print(f"[Scheduler]   Job {job['id']}: already ran this minute, skipping.")
+                    continue
+
+                print(f"[Scheduler] >>> Firing job {job['id']} — {job['source']}")
+                threading.Thread(
+                    target=_run_ingest_job,
+                    args=(job["source"], job["id"]),
+                    daemon=True
+                ).start()
+
+        except Exception as e:
+            import traceback
+            print(f"[Scheduler] Error in scheduler loop: {e}")
+            traceback.print_exc()
+
+        _time.sleep(60)
+
+
+def start_scheduler():
+    """Start the background ingest scheduler thread.
+
+    Guards against Flask debug reloader's double-process issue:
+    when debug=True, werkzeug spawns a child process (WERKZEUG_RUN_MAIN=true).
+    We only want the scheduler in the child worker, not the parent reloader.
+    When debug=False (launcher.py), WERKZEUG_RUN_MAIN is not set, so we start normally.
+    """
+    import os
+    debug_mode = app.debug
+    if debug_mode and os.environ.get("WERKZEUG_RUN_MAIN") != "true":
+        # Parent reloader process — skip starting scheduler here
+        print("[Scheduler] Skipping scheduler start in reloader parent process.")
+        return
+    t = threading.Thread(target=_scheduler_loop, daemon=True)
+    t.start()
+
+
 # ── Entry point ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     db.init_db()
+    start_scheduler()
     print("\n" + "="*60)
     print("  CaptureIQ")
     print("  Open http://127.0.0.1:5000 in your browser")

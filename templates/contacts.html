@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Key Contacts — CaptureIQ{% endblock %}
+{% block content %}
+<div class="topbar">
+  <i class="bi bi-person-lines-fill text-info fs-5"></i>
+  <h1>Key Contacts</h1>
+  <span class="badge bg-secondary ms-2">{{ contacts|length }}</span>
+</div>
+
+<!-- Filter bar -->
+<div class="filter-bar d-flex flex-wrap gap-2 align-items-end mb-3">
+  <form method="get" class="d-flex flex-wrap gap-2 align-items-end w-100">
+    <div>
+      <label class="form-label mb-1" style="font-size:.75rem; font-weight:600">Search</label>
+      <input type="text" name="q" class="form-control form-control-sm" style="width:200px"
+             value="{{ search }}" placeholder="Name, agency, email…">
+    </div>
+    <div>
+      <label class="form-label mb-1" style="font-size:.75rem; font-weight:600">Agency</label>
+      <select name="agency" class="form-select form-select-sm" style="width:180px">
+        <option value="">All Agencies</option>
+        {% for ag in agencies %}
+        <option value="{{ ag }}" {{ 'selected' if agency == ag }}>{{ ag }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="form-label mb-1" style="font-size:.75rem; font-weight:600">Sort By</label>
+      <select name="sort" class="form-select form-select-sm" style="width:160px">
+        <option value="last_name"  {{ 'selected' if sort=='last_name' }}>Last Name</option>
+        <option value="first_name" {{ 'selected' if sort=='first_name' }}>First Name</option>
+        <option value="agency"     {{ 'selected' if sort=='agency' }}>Agency</option>
+        <option value="record_owner_name" {{ 'selected' if sort=='record_owner_name' }}>Record Owner</option>
+      </select>
+    </div>
+    <button type="submit" class="btn btn-primary btn-sm">
+      <i class="bi bi-funnel me-1"></i>Filter
+    </button>
+    {% if search or agency %}
+    <a href="{{ url_for('all_key_contacts') }}" class="btn btn-outline-secondary btn-sm">Clear</a>
+    {% endif %}
+  </form>
+</div>
+
+<div class="card table-card">
+  <div class="card-body p-0">
+    {% if contacts %}
+    <table class="table table-hover mb-0" style="font-size:.86rem">
+      <thead style="background:#f8f9fa; font-size:.74rem; text-transform:uppercase; letter-spacing:.05em">
+        <tr>
+          <th>Last Name</th>
+          <th>First Name</th>
+          <th>Email</th>
+          <th>Phone</th>
+          <th>Agency</th>
+          <th>Opportunity</th>
+          <th>Record Owner</th>
+          <th>Last Contacted</th>
+          <th>Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in contacts %}
+        <tr>
+          <td class="fw-semibold">{{ c.last_name }}</td>
+          <td>{{ c.first_name }}</td>
+          <td>{% if c.email %}<a href="mailto:{{ c.email }}">{{ c.email }}</a>{% else %}—{% endif %}</td>
+          <td>{{ c.phone or '—' }}</td>
+          <td>{{ c.agency or '—' }}</td>
+          <td>
+            {% if c.capture_plan_id %}
+            <a href="{{ url_for('capture_plan_detail', plan_id=c.capture_plan_id) }}" style="font-size:.82rem">
+              {{ c.opportunity_name or '—' }}
+            </a>
+            {% else %}—{% endif %}
+          </td>
+          <td>{{ c.record_owner_name or '—' }}</td>
+          <td>{{ c.last_contacted or '—' }}</td>
+          <td style="max-width:200px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis"
+              title="{{ c.notes or '' }}">{{ c.notes or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="text-center text-muted py-5">
+      <i class="bi bi-person-x fs-2 d-block mb-2"></i>
+      No contacts found{% if search or agency %} matching your filters{% endif %}.
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

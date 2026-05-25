@@ -470,6 +470,48 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_tasks_created_by ON tasks(created_by_id);
             CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
             CREATE INDEX IF NOT EXISTS idx_tasks_end_date ON tasks(end_date);
+
+            -- ── Key Contacts ──────────────────────────────────────────────────
+            CREATE TABLE IF NOT EXISTS key_contacts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                capture_plan_id INTEGER REFERENCES capture_plans(id) ON DELETE CASCADE,
+                first_name TEXT NOT NULL,
+                last_name TEXT NOT NULL,
+                email TEXT,
+                phone TEXT,
+                agency TEXT,
+                title TEXT,
+                notes TEXT,
+                last_contacted TEXT,
+                record_owner_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                created_at TEXT DEFAULT (datetime('now')),
+                updated_at TEXT DEFAULT (datetime('now'))
+            );
+
+            -- ── DB Backup Log ─────────────────────────────────────────────────
+            CREATE TABLE IF NOT EXISTS db_backup_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                filename TEXT,
+                size_bytes INTEGER,
+                created_by_id INTEGER REFERENCES users(id),
+                created_at TEXT DEFAULT (datetime('now'))
+            );
+
+            -- ── Scheduled Ingest Jobs ─────────────────────────────────────────
+            CREATE TABLE IF NOT EXISTS scheduled_ingest_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source TEXT NOT NULL,
+                schedule_type TEXT DEFAULT 'daily',
+                run_time TEXT DEFAULT '02:00',
+                run_days TEXT DEFAULT 'daily',
+                next_run TEXT,
+                last_run TEXT,
+                last_status TEXT,
+                is_active INTEGER DEFAULT 1,
+                created_by_id INTEGER REFERENCES users(id),
+                created_at TEXT DEFAULT (datetime('now')),
+                updated_at TEXT DEFAULT (datetime('now'))
+            );
         """)
 
     # ── Migration: add new columns to existing databases ──────────────────────
@@ -1097,6 +1139,21 @@ def get_projects(stage=None, keyword=None, limit=200, offset=0) -> list:
     params.extend([limit, offset])
     with get_db() as conn:
         rows = conn.execute(sql, params).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_projects_by_owner(owner_id: int) -> list:
+    """Get all projects owned by or associated with a specific user."""
+    sql = """
+        SELECT p.*,
+               t.title as topic_title, t.topic_number, t.agency, t.branch, t.phase
+        FROM projects p
+        LEFT JOIN topics t ON p.topic_id = t.id
+        WHERE p.owner_id = ?
+        ORDER BY p.updated_at DESC
+    """
+    with get_db() as conn:
+        rows = conn.execute(sql, (owner_id,)).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -3079,3 +3136,114 @@ def send_email(to_address: str, subject: str, body_text: str, body_html: str = N
         return True, ""
     except Exception as e:
         return False, str(e)
+
+
+# ── Key Contacts ───────────────────────────────────────────────────────────────
+
+def get_key_contacts(capture_plan_id: int = None) -> list:
+    with get_db() as conn:
+        if capture_plan_id:
+            rows = conn.execute("""
+                SELECT kc.*, u.username as record_owner_name
+                FROM key_contacts kc
+                LEFT JOIN users u ON kc.record_owner_id = u.id
+                WHERE kc.capture_plan_id = ?
+                ORDER BY kc.last_name, kc.first_name
+            """, (capture_plan_id,)).fetchall()
+        else:
+            rows = conn.execute("""
+                SELECT kc.*, u.username as record_owner_name,
+                       cp.capture_name as opportunity_name
+                FROM key_contacts kc
+                LEFT JOIN users u ON kc.record_owner_id = u.id
+                LEFT JOIN capture_plans cp ON kc.capture_plan_id = cp.id
+                ORDER BY kc.last_name, kc.first_name
+            """).fetchall()
+        return [dict(r) for r in rows]
+
+
+def add_key_contact(capture_plan_id, first_name, last_name, email=None, phone=None,
+                    agency=None, title=None, notes=None, last_contacted=None, record_owner_id=None):
+    with get_db() as conn:
+        cur = conn.execute("""
+            INSERT INTO key_contacts (capture_plan_id, first_name, last_name, email, phone,
+                                      agency, title, notes, last_contacted, record_owner_id)
+            VALUES (?,?,?,?,?,?,?,?,?,?)
+        """, (capture_plan_id, first_name, last_name, email, phone,
+              agency, title, notes, last_contacted, record_owner_id))
+        return cur.lastrowid
+
+
+def update_key_contact(contact_id, **kwargs):
+    allowed = ['first_name', 'last_name', 'email', 'phone', 'agency', 'title', 'notes', 'last_contacted']
+    sets = ', '.join(f"{k}=?" for k in kwargs if k in allowed)
+    vals = [kwargs[k] for k in kwargs if k in allowed]
+    if not sets:
+        return
+    vals.append(contact_id)
+    with get_db() as conn:
+        conn.execute(f"UPDATE key_contacts SET {sets}, updated_at=datetime('now') WHERE id=?", vals)
+
+
+def delete_key_contact(contact_id):
+    with get_db() as conn:
+        conn.execute("DELETE FROM key_contacts WHERE id=?", (contact_id,))
+
+
+# ── DB Backup Log ──────────────────────────────────────────────────────────────
+
+def log_db_backup(filename: str, size_bytes: int, user_id: int):
+    with get_db() as conn:
+        conn.execute("INSERT INTO db_backup_log (filename, size_bytes, created_by_id) VALUES (?,?,?)",
+                     (filename, size_bytes, user_id))
+
+
+def get_backup_log(limit=20) -> list:
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT bl.*, u.username FROM db_backup_log bl
+            LEFT JOIN users u ON bl.created_by_id = u.id
+            ORDER BY bl.created_at DESC LIMIT ?
+        """, (limit,)).fetchall()
+        return [dict(r) for r in rows]
+
+
+# ── Scheduled Ingest Jobs ──────────────────────────────────────────────────────
+
+def get_ingest_jobs() -> list:
+    with get_db() as conn:
+        rows = conn.execute("""
+            SELECT j.*, u.username as created_by_name
+            FROM scheduled_ingest_jobs j
+            LEFT JOIN users u ON j.created_by_id = u.id
+            ORDER BY j.source, j.run_time
+        """).fetchall()
+        return [dict(r) for r in rows]
+
+
+def create_ingest_job(source, schedule_type, run_time, run_days, user_id):
+    with get_db() as conn:
+        cur = conn.execute("""
+            INSERT INTO scheduled_ingest_jobs (source, schedule_type, run_time, run_days, created_by_id)
+            VALUES (?,?,?,?,?)
+        """, (source, schedule_type, run_time, run_days, user_id))
+        return cur.lastrowid
+
+
+def update_ingest_job(job_id, source=None, schedule_type=None, run_time=None, run_days=None, is_active=None):
+    fields, vals = [], []
+    if source is not None: fields.append("source=?"); vals.append(source)
+    if schedule_type is not None: fields.append("schedule_type=?"); vals.append(schedule_type)
+    if run_time is not None: fields.append("run_time=?"); vals.append(run_time)
+    if run_days is not None: fields.append("run_days=?"); vals.append(run_days)
+    if is_active is not None: fields.append("is_active=?"); vals.append(1 if is_active else 0)
+    if not fields: return
+    fields.append("updated_at=datetime('now')")
+    vals.append(job_id)
+    with get_db() as conn:
+        conn.execute(f"UPDATE scheduled_ingest_jobs SET {', '.join(fields)} WHERE id=?", vals)
+
+
+def delete_ingest_job(job_id):
+    with get_db() as conn:
+        conn.execute("DELETE FROM scheduled_ingest_jobs WHERE id=?", (job_id,))

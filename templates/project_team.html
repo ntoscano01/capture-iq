@@ -97,7 +97,9 @@
             <label class="form-label fw-semibold" style="font-size:.8rem">Select User</label>
             <select name="user_id" id="userSelect" class="form-select form-select-sm" required>
               <option value="">-- Choose a user --</option>
-              <!-- This will be populated by JavaScript -->
+              {% for u in available_users %}
+              <option value="{{ u.id }}">{{ u.username }}{% if u.email %} ({{ u.email }}){% endif %}</option>
+              {% endfor %}
             </select>
             <small class="form-text text-muted">Only users not on the team are shown</small>
           </div>
@@ -154,36 +156,5 @@
   }
 </style>
 
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-  const userSelect = document.getElementById('userSelect');
-
-  // Fetch available users (not on team)
-  fetch(`/api/project/{{ project['id'] }}/available-users`)
-    .then(response => response.json())
-    .then(data => {
-      if (data.users && data.users.length > 0) {
-        data.users.forEach(user => {
-          const option = document.createElement('option');
-          option.value = user.id;
-          option.textContent = `${user.username}${user.email ? ` (${user.email})` : ''}`;
-          userSelect.appendChild(option);
-        });
-      } else {
-        const option = document.createElement('option');
-        option.textContent = '-- No available users --';
-        option.disabled = true;
-        userSelect.appendChild(option);
-      }
-    })
-    .catch(error => {
-      console.error('Error loading users:', error);
-      const option = document.createElement('option');
-      option.textContent = '-- Error loading users --';
-      option.disabled = true;
-      userSelect.appendChild(option);
-    });
-});
-</script>
 
 {% endblock %}

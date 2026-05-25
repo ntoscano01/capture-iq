@@ -131,9 +131,54 @@
 
 </div>
 
+<!-- ── DB Import ──────────────────────────────────────────────────────────── -->
+<div class="card mt-3" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07)">
+  <div class="card-header bg-white fw-semibold" style="font-size:.88rem">
+    <i class="bi bi-cloud-arrow-up text-warning me-1"></i> Restore / Import Database
+  </div>
+  <div class="card-body">
+    <div class="alert alert-warning py-2 mb-3" style="font-size:.83rem">
+      <i class="bi bi-exclamation-triangle me-1"></i>
+      <strong>Warning:</strong> Importing will replace the current database. A backup is automatically saved first.
+    </div>
+    <form method="post" action="{{ url_for('admin_db_import') }}" enctype="multipart/form-data">
+      <div class="mb-3">
+        <label class="form-label fw-semibold" style="font-size:.83rem">Select .db backup file</label>
+        <input type="file" name="db_file" class="form-control form-control-sm" accept=".db" required>
+      </div>
+      <button type="submit" class="btn btn-warning btn-sm"
+              onclick="return confirm('This will replace the current database. Continue?')">
+        <i class="bi bi-upload me-1"></i> Import Database
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- ── Backup History ─────────────────────────────────────────────────────── -->
+{% if backup_log %}
+<div class="card mt-3" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07)">
+  <div class="card-header bg-white fw-semibold" style="font-size:.88rem">
+    <i class="bi bi-clock-history text-secondary me-1"></i> Backup History
+  </div>
+  <table class="table table-sm mb-0" style="font-size:.84rem">
+    <thead><tr><th>File</th><th>Size</th><th>Created By</th><th>Date</th></tr></thead>
+    <tbody>
+      {% for b in backup_log %}
+      <tr>
+        <td>{{ b.filename or 'captureiq_backup.db' }}</td>
+        <td>{{ "%.2f"|format(b.size_bytes/1048576) }} MB</td>
+        <td>{{ b.username or '—' }}</td>
+        <td class="text-muted">{{ b.created_at[:16].replace('T',' ') if b.created_at else '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
 <!-- ── Recent Logins ──────────────────────────────────────────────────────── -->
 {% if stats.recent_logins %}
-<div class="card" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07)">
+<div class="card mt-3" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07)">
   <div class="card-header bg-white fw-semibold" style="font-size:.88rem">
     <i class="bi bi-person-check text-secondary me-1"></i> Recent Logins
   </div>

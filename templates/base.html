@@ -174,8 +174,8 @@
   <!-- ── Regular User Sidebar ──────────────────────────────────────── -->
 
   {# Determine which sections are active for auto-expand #}
-  {% set pipeline_active = request.endpoint in ['ingest_page', 'topics', 'search'] %}
-  {% set capture_active  = request.endpoint in ['projects', 'project_detail', 'create_project', 'tasks', 'capture_dashboard'] %}
+  {% set pipeline_active = request.endpoint in ['ingest_page', 'topics', 'search', 'ingest_jobs'] %}
+  {% set capture_active  = request.endpoint in ['projects', 'project_detail', 'create_project', 'tasks', 'capture_dashboard', 'all_key_contacts', 'capture_plan_detail'] %}
   {% set insights_active = request.endpoint in ['analytics'] %}
   {% set settings_active = request.endpoint in ['gdrive_settings', 'sharepoint_settings'] %}
 
@@ -200,6 +200,12 @@
       <li class="nav-item">
         <a class="nav-link {% if request.endpoint == 'ingest_page' %}active{% endif %}" href="{{ url_for('ingest_page') }}">
           <i class="bi bi-cloud-download"></i> Ingest Data
+        </a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link {% if request.endpoint == 'ingest_jobs' %}active{% endif %}"
+           href="{{ url_for('ingest_jobs') }}">
+          <i class="bi bi-robot"></i> Auto Jobs
         </a>
       </li>
       <li class="nav-item">
@@ -261,6 +267,14 @@
           {% endif %}
         </a>
       </li>
+      {% if user_is_capture_manager() %}
+      <li class="nav-item">
+        <a class="nav-link {% if request.endpoint == 'all_key_contacts' %}active{% endif %}"
+           href="{{ url_for('all_key_contacts') }}">
+          <i class="bi bi-person-lines-fill"></i> Contacts
+        </a>
+      </li>
+      {% endif %}
     </div>
 
     <!-- ── Insights section ── -->

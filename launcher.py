@@ -65,7 +65,7 @@ except Exception:
 # ── 3. Import Flask app and patch upload folder ───────────────────────────────
 
 import app as app_module
-from app import app
+from app import app, start_scheduler
 
 app_module.UPLOAD_FOLDER = os.path.join(DATA_DIR, "project_uploads")
 
@@ -89,6 +89,10 @@ def _wait_and_open():
 
 
 threading.Thread(target=_wait_and_open, daemon=True).start()
+
+# ── 4b. Start automated ingest job scheduler ─────────────────────────────────
+db.init_db()
+start_scheduler()
 
 
 # ── 5. Run Flask (blocking) ───────────────────────────────────────────────────

@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+{% block title %}Automated Ingest Jobs — CaptureIQ{% endblock %}
+{% block content %}
+<div class="topbar">
+  <i class="bi bi-robot text-primary fs-5"></i>
+  <h1>Automated Ingest Jobs</h1>
+  <a href="{{ url_for('ingest_page') }}" class="btn btn-sm btn-outline-secondary ms-2">
+    <i class="bi bi-arrow-left"></i> Back to Ingest
+  </a>
+  <button class="btn btn-primary btn-sm ms-auto" data-bs-toggle="modal" data-bs-target="#createJobModal">
+    <i class="bi bi-plus-lg me-1"></i> New Job
+  </button>
+</div>
+
+<div class="alert alert-info py-2 mb-3" style="font-size:.85rem">
+  <i class="bi bi-info-circle me-1"></i>
+  Scheduled jobs run automatically at the specified time when the app is running via <code>python3 launcher.py</code>.
+  Jobs are checked every minute. Use the <i class="bi bi-lightning-charge"></i> <strong>Run Now</strong> button to trigger a job immediately.
+</div>
+
+<div class="card table-card">
+  <div class="card-body p-0">
+    {% if jobs %}
+    <table class="table table-hover mb-0" style="font-size:.86rem">
+      <thead style="background:#f8f9fa; font-size:.74rem; text-transform:uppercase; letter-spacing:.05em">
+        <tr>
+          <th>Source</th>
+          <th>Schedule</th>
+          <th>Run Time</th>
+          <th>Days</th>
+          <th>Last Run</th>
+          <th>Last Status</th>
+          <th>Status</th>
+          <th>Created By</th>
+          <th style="width:130px"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for job in jobs %}
+        <tr class="{{ '' if job.is_active else 'table-secondary text-muted' }}">
+          <td class="fw-semibold">
+            <i class="bi bi-cloud-download me-1 text-primary"></i>{{ job.source }}
+          </td>
+          <td>{{ job.schedule_type|title }}</td>
+          <td>{{ job.run_time or '—' }}</td>
+          <td>{{ job.run_days or 'Daily' }}</td>
+          <td class="text-muted">{{ job.last_run[:16].replace('T',' ') if job.last_run else 'Never' }}</td>
+          <td>
+            {% if job.last_status == 'success' %}
+              <span class="badge bg-success">Success</span>
+            {% elif job.last_status == 'error' %}
+              <span class="badge bg-danger">Error</span>
+            {% else %}
+              <span class="badge bg-secondary">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if job.is_active %}
+              <span class="badge bg-success">Active</span>
+            {% else %}
+              <span class="badge bg-secondary">Paused</span>
+            {% endif %}
+          </td>
+          <td class="text-muted">{{ job.created_by_name or '—' }}</td>
+          <td class="text-end">
+            <div class="d-flex gap-1 justify-content-end flex-wrap">
+              <form method="post" action="{{ url_for('run_ingest_job_now', job_id=job.id) }}" class="d-inline">
+                <button type="submit" class="btn btn-sm btn-outline-primary py-0" title="Run Now">
+                  <i class="bi bi-lightning-charge"></i>
+                </button>
+              </form>
+              <button class="btn btn-sm btn-outline-secondary py-0"
+                      data-job='{{ job|tojson }}'
+                      onclick="openEditModal(this)"
+                      title="Edit">
+                <i class="bi bi-pencil"></i>
+              </button>
+              <form method="post" action="{{ url_for('toggle_ingest_job', job_id=job.id) }}" class="d-inline">
+                <button type="submit" class="btn btn-sm btn-outline-{{ 'warning' if job.is_active else 'success' }} py-0"
+                        title="{{ 'Pause' if job.is_active else 'Resume' }}">
+                  <i class="bi bi-{{ 'pause' if job.is_active else 'play' }}"></i>
+                </button>
+              </form>
+              <form method="post" action="{{ url_for('delete_ingest_job', job_id=job.id) }}" class="d-inline"
+                    onsubmit="return confirm('Delete this job?')">
+                <button type="submit" class="btn btn-sm btn-outline-danger py-0" title="Delete">
+                  <i class="bi bi-trash3"></i>
+                </button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="text-center text-muted py-5">
+      <i class="bi bi-robot fs-2 d-block mb-2"></i>
+      No automated jobs configured yet.<br>
+      <button class="btn btn-primary btn-sm mt-2" data-bs-toggle="modal" data-bs-target="#createJobModal">
+        <i class="bi bi-plus-lg me-1"></i> Create First Job
+      </button>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Create Job Modal -->
+<div class="modal fade" id="createJobModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header" style="background:#003087; color:#fff">
+        <h6 class="modal-title"><i class="bi bi-robot me-2"></i>New Automated Job</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post" action="{{ url_for('create_ingest_job') }}">
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label fw-semibold" style="font-size:.83rem">Data Source <span class="text-danger">*</span></label>
+            <select name="source" class="form-select form-select-sm" required>
+              <option value="">— Select Source —</option>
+              {% for s in sources %}
+              <option value="{{ s }}">{{ s }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold" style="font-size:.83rem">Schedule Type</label>
+            <select name="schedule_type" class="form-select form-select-sm" id="schedType" onchange="updateDays()">
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly (1st of month)</option>
+            </select>
+          </div>
+          <div class="mb-3" id="daysGroup">
+            <label class="form-label fw-semibold" style="font-size:.83rem">Days</label>
+            <select name="run_days" class="form-select form-select-sm" id="runDays">
+              <option value="daily">Every Day</option>
+              <option value="weekdays">Weekdays Only (Mon–Fri)</option>
+              <option value="monday">Mondays</option>
+              <option value="tuesday">Tuesdays</option>
+              <option value="wednesday">Wednesdays</option>
+              <option value="thursday">Thursdays</option>
+              <option value="friday">Fridays</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold" style="font-size:.83rem">Run Time</label>
+            <input type="time" name="run_time" class="form-control form-control-sm" value="02:00">
+            <div class="form-text" style="font-size:.73rem">Time is in local server time (24-hour format).</div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>Create Job</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Job Modal -->
+<div class="modal fade" id="editJobModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header" style="background:#003087; color:#fff">
+        <h6 class="modal-title"><i class="bi bi-pencil me-2"></i>Edit Job</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post" id="editJobForm">
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label fw-semibold" style="font-size:.83rem">Data Source</label>
+            <select name="source" id="editSource" class="form-select form-select-sm" required>
+              {% for s in sources %}
+              <option value="{{ s }}">{{ s }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold" style="font-size:.83rem">Schedule Type</label>
+            <select name="schedule_type" id="editSchedType" class="form-select form-select-sm">
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold" style="font-size:.83rem">Days</label>
+            <select name="run_days" id="editRunDays" class="form-select form-select-sm">
+              <option value="daily">Every Day</option>
+              <option value="weekdays">Weekdays Only</option>
+              <option value="monday">Mondays</option>
+              <option value="tuesday">Tuesdays</option>
+              <option value="wednesday">Wednesdays</option>
+              <option value="thursday">Thursdays</option>
+              <option value="friday">Fridays</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold" style="font-size:.83rem">Run Time</label>
+            <input type="time" name="run_time" id="editRunTime" class="form-control form-control-sm">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+function updateDays() {
+  const t = document.getElementById('schedType').value;
+  document.getElementById('daysGroup').style.display = t === 'monthly' ? 'none' : '';
+}
+
+function setSelectValue(id, value) {
+  const el = document.getElementById(id);
+  if (!el || value == null) return;
+  // Try exact match first, then case-insensitive
+  for (const opt of el.options) {
+    if (opt.value === value || opt.value.toLowerCase() === String(value).toLowerCase()) {
+      el.value = opt.value;
+      return;
+    }
+  }
+}
+
+function openEditModal(btn) {
+  const job = JSON.parse(btn.dataset.job);
+  document.getElementById('editJobForm').action = '/ingest/jobs/' + job.id + '/edit';
+  setSelectValue('editSource',    job.source);
+  setSelectValue('editSchedType', job.schedule_type || 'daily');
+  setSelectValue('editRunDays',   job.run_days || 'daily');
+  document.getElementById('editRunTime').value = job.run_time || '02:00';
+  new bootstrap.Modal(document.getElementById('editJobModal')).show();
+}
+</script>
+{% endblock %}

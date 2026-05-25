@@ -10,7 +10,15 @@
   </span>
 </div>
 
-<!-- Stat cards -->
+<!-- Pipeline Metrics Section Header -->
+<div class="d-flex align-items-center mb-3">
+  <h5 class="mb-0 fw-semibold" style="color:var(--navy, #003087); font-size:.95rem">
+    <i class="bi bi-graph-up me-2"></i>Pipeline Metrics
+  </h5>
+  <hr class="flex-grow-1 ms-3 my-0">
+</div>
+
+<!-- Pipeline Stat cards -->
 <div class="row g-3 mb-4">
   <div class="col-6 col-md-2">
     <div class="card stat-card h-100" style="cursor:pointer" onclick="location.href='{{ url_for('topics') }}'">
@@ -188,9 +196,37 @@
   </div>
 </div>
 
+<!-- Capture Metrics Section Header -->
+<div class="d-flex align-items-center mb-3 mt-4">
+  <h5 class="mb-0 fw-semibold" style="color:var(--navy, #003087); font-size:.95rem">
+    <i class="bi bi-bullseye me-2"></i>Capture Metrics
+  </h5>
+  <hr class="flex-grow-1 ms-3 my-0">
+</div>
+
+<!-- Capture Stat cards -->
+<div class="row g-3 mb-3">
+  <div class="col-6 col-md-3">
+    <div class="card stat-card h-100" style="cursor:pointer" onclick="location.href='{{ url_for('projects') }}'">
+      <div class="card-body text-center">
+        <div class="stat-number text-primary">{{ capture_stats.total if capture_stats else 0 }}</div>
+        <div class="stat-label">Active Projects</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card stat-card h-100">
+      <div class="card-body text-center">
+        <div class="stat-number text-success" style="font-size:1.4rem">${{ pipeline_value_fmt }}</div>
+        <div class="stat-label">Pipeline Value</div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- SBIR Capture summary -->
 {% if capture_stats and capture_stats.total > 0 %}
-<div class="row g-3 mt-1">
+<div class="row g-3">
   <div class="col-12">
     <div class="card table-card">
       <div class="card-header bg-white fw-semibold border-bottom d-flex align-items-center">
