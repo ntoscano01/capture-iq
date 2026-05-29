@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Offline — CaptureIQ</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f0f4f8;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+    }
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 48px 40px;
+      max-width: 420px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 4px 24px rgba(0,0,0,.08);
+    }
+    .icon { font-size: 64px; margin-bottom: 24px; }
+    h1 { color: #003087; font-size: 1.6rem; margin-bottom: 12px; }
+    p { color: #555; line-height: 1.6; margin-bottom: 8px; font-size: .95rem; }
+    .btn {
+      display: inline-block;
+      margin-top: 28px;
+      padding: 12px 32px;
+      background: #003087;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .status { margin-top: 20px; font-size: .8rem; color: #999; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">📡</div>
+    <h1>You're Offline</h1>
+    <p>CaptureIQ can't reach the server right now.</p>
+    <p>Any data you entered while connected has been saved. Reconnect to sync and continue working.</p>
+    <button class="btn" onclick="location.reload()">Try Again</button>
+    <p class="status" id="status">Checking connection…</p>
+  </div>
+  <script>
+    function checkOnline() {
+      if (navigator.onLine) {
+        document.getElementById('status').textContent = 'Connection restored — reloading…';
+        setTimeout(() => location.href = '/', 1000);
+      } else {
+        document.getElementById('status').textContent = 'Still offline. Will retry automatically.';
+      }
+    }
+    window.addEventListener('online', checkOnline);
+    setInterval(checkOnline, 5000);
+    checkOnline();
+  </script>
+</body>
+</html>

@@ -7,7 +7,10 @@ import sqlite3
 import os
 from datetime import datetime
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "sbir_pipeline.db")
+DB_PATH = os.environ.get(
+    "CAPTUREIQ_DB_PATH",
+    os.path.join(os.path.dirname(__file__), "sbir_pipeline.db")
+)
 
 
 def get_db():
@@ -475,6 +478,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS key_contacts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 capture_plan_id INTEGER REFERENCES capture_plans(id) ON DELETE CASCADE,
+                project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
                 first_name TEXT NOT NULL,
                 last_name TEXT NOT NULL,
                 email TEXT,
@@ -598,6 +602,18 @@ def init_db():
             if col not in existing:
                 conn.execute(f"ALTER TABLE project_checklist_items ADD COLUMN {col} {col_type}")
                 print(f"[DB] Migrated: added project_checklist_items.{col}")
+
+    # ── Migrate key_contacts table ────────────────────────────────────────────
+    new_contact_cols = [
+        ("project_id", "INTEGER REFERENCES projects(id) ON DELETE SET NULL"),
+        ("is_locked", "INTEGER DEFAULT 0"),
+    ]
+    with get_db() as conn:
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(key_contacts)")}
+        for col, col_type in new_contact_cols:
+            if col not in existing:
+                conn.execute(f"ALTER TABLE key_contacts ADD COLUMN {col} {col_type}")
+                print(f"[DB] Migrated: added key_contacts.{col}")
 
     print(f"[DB] Database initialized at {DB_PATH}")
 
@@ -862,7 +878,7 @@ def upsert_topic(data: dict) -> tuple[bool, bool]:
             return True, False
 
 
-def get_topics(agency=None, phase=None, source=None, keyword=None,
+def get_topics(agency=None, branch=None, phase=None, source=None, keyword=None,
                favorited=None, topic_status=None, limit=200, offset=0,
                user_id=None):
     # When a user_id is provided, overlay per-user prefs via LEFT JOIN
@@ -893,6 +909,9 @@ def get_topics(agency=None, phase=None, source=None, keyword=None,
     if agency:
         sql += " AND t.agency = ?" if user_id else " AND agency = ?"
         params.append(agency)
+    if branch:
+        sql += " AND t.branch = ?" if user_id else " AND branch = ?"
+        params.append(branch)
     if phase:
         sql += " AND t.phase = ?" if user_id else " AND phase = ?"
         params.append(phase)
@@ -1363,10 +1382,20 @@ def get_capture_stats() -> dict:
             FROM projects p LEFT JOIN topics t ON p.topic_id=t.id
             ORDER BY p.updated_at DESC LIMIT 5
         """).fetchall()
+        # Capture plan stage counts for dashboard metrics
+        plan_stage_counts = conn.execute("""
+            SELECT stage, COUNT(*) as cnt
+            FROM capture_plans
+            WHERE is_archived=0 OR is_archived IS NULL
+            GROUP BY stage
+        """).fetchall()
+    plan_by_stage = {r['stage']: r['cnt'] for r in plan_stage_counts}
     return {
-        "total":    total,
-        "by_stage": [dict(r) for r in by_stage],
-        "recent":   [dict(r) for r in recent],
+        "total":         total,
+        "by_stage":      [dict(r) for r in by_stage],
+        "recent":        [dict(r) for r in recent],
+        "plan_by_stage": plan_by_stage,
+        "plans_total":   sum(plan_by_stage.values()),
     }
 
 
@@ -3140,42 +3169,60 @@ def send_email(to_address: str, subject: str, body_text: str, body_html: str = N
 
 # ── Key Contacts ───────────────────────────────────────────────────────────────
 
-def get_key_contacts(capture_plan_id: int = None) -> list:
+def get_key_contacts(capture_plan_id: int = None, project_id: int = None) -> list:
     with get_db() as conn:
         if capture_plan_id:
             rows = conn.execute("""
-                SELECT kc.*, u.username as record_owner_name
+                SELECT kc.*, u.username as record_owner_name,
+                       p.name as project_name
                 FROM key_contacts kc
                 LEFT JOIN users u ON kc.record_owner_id = u.id
+                LEFT JOIN projects p ON kc.project_id = p.id
                 WHERE kc.capture_plan_id = ?
                 ORDER BY kc.last_name, kc.first_name
             """, (capture_plan_id,)).fetchall()
-        else:
+        elif project_id:
             rows = conn.execute("""
                 SELECT kc.*, u.username as record_owner_name,
-                       cp.capture_name as opportunity_name
+                       cp.capture_name as opportunity_name,
+                       p.name as project_name
                 FROM key_contacts kc
                 LEFT JOIN users u ON kc.record_owner_id = u.id
                 LEFT JOIN capture_plans cp ON kc.capture_plan_id = cp.id
+                LEFT JOIN projects p ON kc.project_id = p.id
+                WHERE kc.project_id = ?
+                ORDER BY kc.last_name, kc.first_name
+            """, (project_id,)).fetchall()
+        else:
+            rows = conn.execute("""
+                SELECT kc.*, u.username as record_owner_name,
+                       cp.capture_name as opportunity_name,
+                       p.name as project_name
+                FROM key_contacts kc
+                LEFT JOIN users u ON kc.record_owner_id = u.id
+                LEFT JOIN capture_plans cp ON kc.capture_plan_id = cp.id
+                LEFT JOIN projects p ON kc.project_id = p.id
                 ORDER BY kc.last_name, kc.first_name
             """).fetchall()
         return [dict(r) for r in rows]
 
 
 def add_key_contact(capture_plan_id, first_name, last_name, email=None, phone=None,
-                    agency=None, title=None, notes=None, last_contacted=None, record_owner_id=None):
+                    agency=None, title=None, notes=None, last_contacted=None,
+                    record_owner_id=None, project_id=None):
     with get_db() as conn:
         cur = conn.execute("""
-            INSERT INTO key_contacts (capture_plan_id, first_name, last_name, email, phone,
-                                      agency, title, notes, last_contacted, record_owner_id)
-            VALUES (?,?,?,?,?,?,?,?,?,?)
-        """, (capture_plan_id, first_name, last_name, email, phone,
+            INSERT INTO key_contacts (capture_plan_id, project_id, first_name, last_name,
+                                      email, phone, agency, title, notes, last_contacted, record_owner_id)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)
+        """, (capture_plan_id, project_id, first_name, last_name, email, phone,
               agency, title, notes, last_contacted, record_owner_id))
         return cur.lastrowid
 
 
 def update_key_contact(contact_id, **kwargs):
-    allowed = ['first_name', 'last_name', 'email', 'phone', 'agency', 'title', 'notes', 'last_contacted']
+    allowed = ['first_name', 'last_name', 'email', 'phone', 'agency', 'title', 'notes',
+               'last_contacted', 'project_id', 'capture_plan_id']
     sets = ', '.join(f"{k}=?" for k in kwargs if k in allowed)
     vals = [kwargs[k] for k in kwargs if k in allowed]
     if not sets:
@@ -3187,7 +3234,23 @@ def update_key_contact(contact_id, **kwargs):
 
 def delete_key_contact(contact_id):
     with get_db() as conn:
+        row = conn.execute("SELECT is_locked FROM key_contacts WHERE id=?", (contact_id,)).fetchone()
+        if row and row['is_locked']:
+            return False  # Blocked — contact is locked
         conn.execute("DELETE FROM key_contacts WHERE id=?", (contact_id,))
+        return True
+
+
+def toggle_contact_lock(contact_id: int) -> bool:
+    """Toggle the is_locked flag. Returns the new lock state (True = locked)."""
+    with get_db() as conn:
+        row = conn.execute("SELECT is_locked FROM key_contacts WHERE id=?", (contact_id,)).fetchone()
+        if not row:
+            return False
+        new_state = 0 if row['is_locked'] else 1
+        conn.execute("UPDATE key_contacts SET is_locked=?, updated_at=datetime('now') WHERE id=?",
+                     (new_state, contact_id))
+        return bool(new_state)
 
 
 # ── DB Backup Log ──────────────────────────────────────────────────────────────

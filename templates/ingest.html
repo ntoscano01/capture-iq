@@ -10,10 +10,30 @@
   </a>
 </div>
 
+<!-- Source visibility toggles -->
+<div class="d-flex align-items-center gap-3 mb-3 flex-wrap">
+  <span class="text-muted fw-semibold" style="font-size:.82rem">Show sources:</span>
+  <div class="form-check form-switch mb-0">
+    <input class="form-check-input" type="checkbox" id="toggle-sbirgov" checked
+           onchange="toggleSource('sbirgov', this.checked)">
+    <label class="form-check-label" for="toggle-sbirgov" style="font-size:.85rem">SBIR.gov</label>
+  </div>
+  <div class="form-check form-switch mb-0">
+    <input class="form-check-input" type="checkbox" id="toggle-dod" checked
+           onchange="toggleSource('dod', this.checked)">
+    <label class="form-check-label" for="toggle-dod" style="font-size:.85rem">DoD SBIR/STTR</label>
+  </div>
+  <div class="form-check form-switch mb-0">
+    <input class="form-check-input" type="checkbox" id="toggle-navy" checked
+           onchange="toggleSource('navy', this.checked)">
+    <label class="form-check-label" for="toggle-navy" style="font-size:.85rem">Navy SBIR</label>
+  </div>
+</div>
+
 <div class="row g-3">
 
   <!-- SBIR.gov Topics -->
-  <div class="col-md-6">
+  <div class="col-md-6" id="source-sbirgov">
     <div class="card h-100 border-success">
       <div class="card-header bg-success text-white fw-semibold d-flex align-items-center gap-2">
         <img src="https://www.sbir.gov/favicon.ico" style="width:18px;height:18px;filter:brightness(10)" onerror="this.style.display='none'">
@@ -86,7 +106,7 @@
   </div>
 
   <!-- DoD SBIR/STTR Portal -->
-  <div class="col-md-6">
+  <div class="col-md-6" id="source-dod">
     <div class="card h-100 border-primary">
       <div class="card-header bg-primary text-white fw-semibold d-flex align-items-center gap-2">
         <i class="bi bi-shield-fill-check"></i>
@@ -140,7 +160,7 @@
   </div>
 
   <!-- Navy SBIR -->
-  <div class="col-md-6">
+  <div class="col-md-6" id="source-navy">
     <div class="card h-100" style="border-color:#003087">
       <div class="card-header fw-semibold d-flex align-items-center gap-2"
            style="background:#003087; color:#fff">
@@ -180,7 +200,7 @@
   </div>
 
   <!-- Active Jobs -->
-  <div class="col-md-6">
+  <div class="col-12">
     <div class="card h-100">
       <div class="card-header bg-white fw-semibold d-flex align-items-center gap-2">
         <i class="bi bi-activity text-warning"></i> Active Jobs
@@ -237,47 +257,70 @@
 <!-- Ingest Log -->
 {% if recent_logs %}
 <div class="card table-card mt-3">
-  <div class="card-header bg-white fw-semibold">
+  <div class="card-header bg-white fw-semibold d-flex align-items-center">
     <i class="bi bi-journal-text text-muted me-1"></i> Ingestion History
+    <span class="badge bg-secondary ms-2">{{ recent_logs|length }}</span>
   </div>
-  <table class="table table-hover mb-0" style="font-size:.85rem">
-    <thead><tr><th>Source</th><th>Added</th><th>Updated</th><th>Errors</th><th>Started</th><th>Finished</th><th></th></tr></thead>
-    <tbody>
-      {% for log in recent_logs %}
-      <tr>
-        <td><span class="badge bg-secondary">{{ log.source }}</span></td>
-        <td><span class="text-success">+{{ log.records_added }}</span></td>
-        <td><span class="text-info">~{{ log.records_updated }}</span></td>
-        <td>
-          {% if log.errors %}
-            <span class="text-danger" title="{{ log.errors }}">
-              <i class="bi bi-exclamation-circle"></i> Yes
-            </span>
-          {% else %}
-            <span class="text-success"><i class="bi bi-check"></i></span>
-          {% endif %}
-        </td>
-        <td class="text-muted">{{ log.started_at[:16] if log.started_at else '—' }}</td>
-        <td class="text-muted">{{ log.finished_at[:16] if log.finished_at else '—' }}</td>
-        <td>
-          <form method="post" action="{{ url_for('delete_ingest_log', log_id=log.id) }}"
-                onsubmit="return confirm('Remove this log entry?')">
-            <button type="submit" class="btn btn-outline-danger btn-sm py-0 px-1"
-                    title="Remove this entry">
-              <i class="bi bi-trash3"></i>
-            </button>
-          </form>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <div style="max-height:220px; overflow-y:auto">
+    <table class="table table-hover mb-0" style="font-size:.85rem">
+      <thead style="position:sticky; top:0; background:#fff; z-index:1">
+        <tr><th>Source</th><th>Added</th><th>Updated</th><th>Errors</th><th>Started</th><th>Finished</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for log in recent_logs[:5] %}
+        <tr>
+          <td><span class="badge bg-secondary">{{ log.source }}</span></td>
+          <td><span class="text-success">+{{ log.records_added }}</span></td>
+          <td><span class="text-info">~{{ log.records_updated }}</span></td>
+          <td>
+            {% if log.errors %}
+              <span class="text-danger" title="{{ log.errors }}">
+                <i class="bi bi-exclamation-circle"></i> Yes
+              </span>
+            {% else %}
+              <span class="text-success"><i class="bi bi-check"></i></span>
+            {% endif %}
+          </td>
+          <td class="text-muted">{{ log.started_at[:16] if log.started_at else '—' }}</td>
+          <td class="text-muted">{{ log.finished_at[:16] if log.finished_at else '—' }}</td>
+          <td>
+            <form method="post" action="{{ url_for('delete_ingest_log', log_id=log.id) }}"
+                  onsubmit="return confirm('Remove this log entry?')">
+              <button type="submit" class="btn btn-outline-danger btn-sm py-0 px-1"
+                      title="Remove this entry">
+                <i class="bi bi-trash3"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
 {% endif %}
 {% endblock %}
 
 {% block scripts %}
 <script>
+  // Source card show/hide toggles (persist via localStorage)
+  function toggleSource(id, visible) {
+    const el = document.getElementById('source-' + id);
+    if (el) el.style.display = visible ? '' : 'none';
+    try { localStorage.setItem('ingest_show_' + id, visible ? '1' : '0'); } catch(e) {}
+  }
+  // Restore saved toggle states on load
+  ['sbirgov', 'dod', 'navy'].forEach(id => {
+    try {
+      const saved = localStorage.getItem('ingest_show_' + id);
+      if (saved === '0') {
+        toggleSource(id, false);
+        const chk = document.getElementById('toggle-' + id);
+        if (chk) chk.checked = false;
+      }
+    } catch(e) {}
+  });
+
   // Auto-refresh if jobs are running
   {% if jobs %}
   const hasRunning = {{ 'true' if jobs.values()|selectattr('status','eq','running')|list else 'false' }};

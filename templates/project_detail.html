@@ -143,6 +143,226 @@
       </div>
     </div>
 
+    <!-- Project Contacts card -->
+    <div class="card mb-3" id="contacts" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07)">
+      <div class="card-header bg-white fw-semibold border-bottom d-flex align-items-center">
+        <i class="bi bi-person-lines-fill text-info me-2"></i> Project Contacts
+        <span class="badge bg-secondary ms-2">{{ project_contacts|length }}</span>
+        <button class="btn btn-sm btn-outline-primary ms-auto" data-bs-toggle="modal" data-bs-target="#addProjectContactModal">
+          <i class="bi bi-plus-lg me-1"></i> Add Contact
+        </button>
+      </div>
+      {% if project_contacts %}
+      <div class="table-responsive" style="max-height:280px; overflow-y:auto">
+        <table class="table table-hover mb-0" style="font-size:.84rem">
+          <thead style="position:sticky; top:0; background:#fff; z-index:1; font-size:.73rem; text-transform:uppercase; letter-spacing:.04em">
+            <tr>
+              <th>Name</th>
+              <th>Title</th>
+              <th>Agency</th>
+              <th>Email</th>
+              <th>Phone</th>
+              <th>Last Contacted</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in project_contacts %}
+            <tr>
+              <td class="fw-semibold">{{ c.last_name }}, {{ c.first_name }}</td>
+              <td>{{ c.title or '—' }}</td>
+              <td>{{ c.agency or '—' }}</td>
+              <td>{% if c.email %}<a href="mailto:{{ c.email }}">{{ c.email }}</a>{% else %}—{% endif %}</td>
+              <td>{{ c.phone or '—' }}</td>
+              <td>{{ c.last_contacted or '—' }}</td>
+              <td class="text-end" style="white-space:nowrap">
+                <div class="btn-group btn-group-sm" role="group">
+                  <button type="button" class="btn btn-outline-secondary py-0 px-2"
+                          title="Edit contact"
+                          onclick='openEditProjContact({{ c|tojson }})'>
+                    <i class="bi bi-pencil"></i>
+                  </button>
+                  <button type="button" class="btn btn-outline-secondary py-0 px-2"
+                          title="{{ 'Locked — cannot delete' if c.is_locked else 'Lock contact' }}"
+                          onclick="toggleLock({{ c.id }}, {{ 'true' if c.is_locked else 'false' }})">
+                    <i class="bi bi-{{ 'lock-fill text-warning' if c.is_locked else 'unlock' }}"></i>
+                  </button>
+                  {% if not c.is_locked %}
+                  <form method="post" action="{{ url_for('delete_project_contact', contact_id=c.id) }}"
+                        onsubmit="return confirm('Remove {{ c.first_name }} {{ c.last_name }}?')" class="d-inline">
+                    <button type="submit" class="btn btn-outline-danger py-0 px-2" title="Delete">
+                      <i class="bi bi-trash3"></i>
+                    </button>
+                  </form>
+                  {% else %}
+                  <button type="button" class="btn btn-outline-danger py-0 px-2 disabled" title="Unlock to delete">
+                    <i class="bi bi-trash3"></i>
+                  </button>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="card-body py-3 text-center text-muted" style="font-size:.85rem">
+        <i class="bi bi-person-x d-block mb-1 fs-4"></i>
+        No contacts yet. Add a contact to track agency POCs for this project.
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Edit Project Contact Modal -->
+    <div class="modal fade" id="editProjContactModal" tabindex="-1">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header" style="background:#003087; color:#fff">
+            <h6 class="modal-title"><i class="bi bi-pencil me-2"></i>Edit Contact</h6>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <form method="post" action="" id="editProjContactForm">
+            <input type="hidden" name="next" value="{{ request.url }}">
+            <div class="modal-body">
+              <div class="row g-2">
+                <div class="col-6">
+                  <label class="form-label fw-semibold" style="font-size:.82rem">First Name <span class="text-danger">*</span></label>
+                  <input type="text" name="first_name" id="epc_first_name" class="form-control form-control-sm" required>
+                </div>
+                <div class="col-6">
+                  <label class="form-label fw-semibold" style="font-size:.82rem">Last Name <span class="text-danger">*</span></label>
+                  <input type="text" name="last_name" id="epc_last_name" class="form-control form-control-sm" required>
+                </div>
+                <div class="col-6">
+                  <label class="form-label fw-semibold" style="font-size:.82rem">Title</label>
+                  <input type="text" name="title" id="epc_title" class="form-control form-control-sm">
+                </div>
+                <div class="col-6">
+                  <label class="form-label fw-semibold" style="font-size:.82rem">Agency</label>
+                  <input type="text" name="agency" id="epc_agency" class="form-control form-control-sm">
+                </div>
+                <div class="col-6">
+                  <label class="form-label fw-semibold" style="font-size:.82rem">Email</label>
+                  <input type="email" name="email" id="epc_email" class="form-control form-control-sm">
+                </div>
+                <div class="col-6">
+                  <label class="form-label fw-semibold" style="font-size:.82rem">Phone</label>
+                  <input type="text" name="phone" id="epc_phone" class="form-control form-control-sm">
+                </div>
+                <div class="col-6">
+                  <label class="form-label fw-semibold" style="font-size:.82rem">Last Contacted</label>
+                  <input type="date" name="last_contacted" id="epc_last_contacted" class="form-control form-control-sm">
+                </div>
+                <div class="col-6">
+                  <label class="form-label fw-semibold" style="font-size:.82rem">Link to Capture Plan</label>
+                  <select name="capture_plan_id" id="epc_capture_plan_id" class="form-select form-select-sm">
+                    <option value="">— No Capture Plan Link —</option>
+                    {% for cp in all_capture_plans %}
+                    <option value="{{ cp.id }}">{{ cp.capture_name }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-12">
+                  <label class="form-label fw-semibold" style="font-size:.82rem">Notes</label>
+                  <textarea name="notes" id="epc_notes" class="form-control form-control-sm" rows="2"></textarea>
+                </div>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+              <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-check-lg me-1"></i>Save Changes</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hidden form for lock toggle -->
+    <form id="projLockToggleForm" method="post" action="" style="display:none">
+      <input type="hidden" name="next" value="{{ request.url }}">
+    </form>
+
+    <script>
+    function toggleLock(contactId, isLocked) {
+      var msg = isLocked ? 'Unlock this contact?' : 'Lock this contact to prevent deletion?';
+      if (!confirm(msg)) return;
+      var form = document.getElementById('projLockToggleForm');
+      form.action = '/contacts/' + contactId + '/toggle-lock';
+      form.submit();
+    }
+
+    function openEditProjContact(c) {
+      document.getElementById('epc_first_name').value     = c.first_name || '';
+      document.getElementById('epc_last_name').value      = c.last_name  || '';
+      document.getElementById('epc_title').value          = c.title      || '';
+      document.getElementById('epc_agency').value         = c.agency     || '';
+      document.getElementById('epc_email').value          = c.email      || '';
+      document.getElementById('epc_phone').value          = c.phone      || '';
+      document.getElementById('epc_last_contacted').value = c.last_contacted || '';
+      document.getElementById('epc_notes').value          = c.notes      || '';
+      var sel = document.getElementById('epc_capture_plan_id');
+      sel.value = c.capture_plan_id ? String(c.capture_plan_id) : '';
+      document.getElementById('editProjContactForm').action = '/contacts/' + c.id + '/edit';
+      var modal = new bootstrap.Modal(document.getElementById('editProjContactModal'));
+      modal.show();
+    }
+    </script>
+
+    <!-- Add Project Contact Modal -->
+    <div class="modal fade" id="addProjectContactModal" tabindex="-1">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header" style="background:#003087; color:#fff">
+            <h6 class="modal-title"><i class="bi bi-person-plus me-2"></i>Add Project Contact</h6>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <form method="post" action="{{ url_for('add_project_contact', project_id=project.id) }}">
+            <div class="modal-body">
+              <div class="row g-2">
+                <div class="col-6">
+                  <label class="form-label fw-semibold" style="font-size:.82rem">First Name <span class="text-danger">*</span></label>
+                  <input type="text" name="first_name" class="form-control form-control-sm" required>
+                </div>
+                <div class="col-6">
+                  <label class="form-label fw-semibold" style="font-size:.82rem">Last Name <span class="text-danger">*</span></label>
+                  <input type="text" name="last_name" class="form-control form-control-sm" required>
+                </div>
+                <div class="col-6">
+                  <label class="form-label fw-semibold" style="font-size:.82rem">Title</label>
+                  <input type="text" name="title" class="form-control form-control-sm" placeholder="e.g. Program Manager">
+                </div>
+                <div class="col-6">
+                  <label class="form-label fw-semibold" style="font-size:.82rem">Agency</label>
+                  <input type="text" name="agency" class="form-control form-control-sm" placeholder="e.g. NAVAIR">
+                </div>
+                <div class="col-6">
+                  <label class="form-label fw-semibold" style="font-size:.82rem">Email</label>
+                  <input type="email" name="email" class="form-control form-control-sm">
+                </div>
+                <div class="col-6">
+                  <label class="form-label fw-semibold" style="font-size:.82rem">Phone</label>
+                  <input type="text" name="phone" class="form-control form-control-sm">
+                </div>
+                <div class="col-6">
+                  <label class="form-label fw-semibold" style="font-size:.82rem">Last Contacted</label>
+                  <input type="date" name="last_contacted" class="form-control form-control-sm">
+                </div>
+                <div class="col-12">
+                  <label class="form-label fw-semibold" style="font-size:.82rem">Notes</label>
+                  <textarea name="notes" class="form-control form-control-sm" rows="2" placeholder="Any context about this contact…"></textarea>
+                </div>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+              <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>Add Contact</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
     <!-- Checklist card -->
     <div class="card mb-3" style="border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,.07)">
       <div class="card-header bg-white fw-semibold border-bottom d-flex align-items-center">

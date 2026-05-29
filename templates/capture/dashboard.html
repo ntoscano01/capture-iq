@@ -39,8 +39,9 @@
               <i class="bi bi-trophy" style="color: #ffc107;"></i> Won
             {% elif stage == 'lost' %}
               <i class="bi bi-x-circle"></i> Lost
+            {% else %}
+              <i class="bi bi-circle"></i> {{ stage|title|replace('-', ' ') }}
             {% endif %}
-            <span class="ms-2">{{ stage|title|replace('-', ' ') }}</span>
             <span class="badge bg-secondary ms-2">{{ plans|length }}</span>
           </h5>
         </div>

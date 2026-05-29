@@ -15,7 +15,7 @@
     <span class="badge bg-danger ms-1"><i class="bi bi-hand-thumbs-down-fill"></i> Not Interested</span>
   {% endif %}
   <a href="{{ url_for('export_topics_csv',
-                      agency=agency, phase=phase, source=source,
+                      branch=branch, phase=phase, source=source,
                       keyword=keyword, favorited=favorited,
                       topic_status=topic_status) }}"
      class="btn btn-outline-success btn-sm ms-auto">
@@ -31,11 +31,11 @@
              placeholder="Search topic title or description…" value="{{ keyword }}">
     </div>
     <div class="col-md-2">
-      <label class="form-label mb-1 fw-semibold" style="font-size:.75rem">Agency</label>
-      <select name="agency" class="form-select form-select-sm">
-        <option value="">All Agencies</option>
-        {% for a in filters.agencies %}
-          <option value="{{ a }}" {{ 'selected' if agency == a }}>{{ a }}</option>
+      <label class="form-label mb-1 fw-semibold" style="font-size:.75rem">Component</label>
+      <select name="branch" class="form-select form-select-sm">
+        <option value="">All Components</option>
+        {% for b in filters.branches %}
+          {% if b %}<option value="{{ b }}" {{ 'selected' if branch == b }}>{{ b }}</option>{% endif %}
         {% endfor %}
       </select>
     </div>
@@ -168,12 +168,12 @@
   <nav><ul class="pagination pagination-sm">
     {% if page > 1 %}
     <li class="page-item">
-      <a class="page-link" href="?page={{ page-1 }}&keyword={{ keyword }}&agency={{ agency }}&phase={{ phase }}">« Prev</a>
+      <a class="page-link" href="?page={{ page-1 }}&keyword={{ keyword }}&branch={{ branch }}&phase={{ phase }}">« Prev</a>
     </li>
     {% endif %}
     <li class="page-item active"><span class="page-link">{{ page }}</span></li>
     <li class="page-item">
-      <a class="page-link" href="?page={{ page+1 }}&keyword={{ keyword }}&agency={{ agency }}&phase={{ phase }}">Next »</a>
+      <a class="page-link" href="?page={{ page+1 }}&keyword={{ keyword }}&branch={{ branch }}&phase={{ phase }}">Next »</a>
     </li>
   </ul></nav>
 </div>

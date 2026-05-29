@@ -54,14 +54,6 @@
       </div>
     </div>
   </div>
-  <div class="col-6 col-md-2">
-    <div class="card stat-card h-100">
-      <div class="card-body text-center">
-        <div class="stat-number text-info">{{ stats.noted_count }}</div>
-        <div class="stat-label">With Notes</div>
-      </div>
-    </div>
-  </div>
 </div>
 
 <div class="row g-3">
@@ -206,7 +198,7 @@
 
 <!-- Capture Stat cards -->
 <div class="row g-3 mb-3">
-  <div class="col-6 col-md-3">
+  <div class="col-6 col-md-2">
     <div class="card stat-card h-100" style="cursor:pointer" onclick="location.href='{{ url_for('projects') }}'">
       <div class="card-body text-center">
         <div class="stat-number text-primary">{{ capture_stats.total if capture_stats else 0 }}</div>
@@ -214,14 +206,39 @@
       </div>
     </div>
   </div>
-  <div class="col-6 col-md-3">
+  <div class="col-6 col-md-2">
     <div class="card stat-card h-100">
       <div class="card-body text-center">
-        <div class="stat-number text-success" style="font-size:1.4rem">${{ pipeline_value_fmt }}</div>
+        <div class="stat-number text-success" style="font-size:1.1rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">${{ pipeline_value_fmt }}</div>
         <div class="stat-label">Pipeline Value</div>
       </div>
     </div>
   </div>
+  {% if capture_stats and capture_stats.plan_by_stage %}
+  {% set stage_labels = {'pre-release': ('Pre-Release', 'text-secondary', 'bi-clock-history'),
+                         'rfp-released': ('RFP Released', 'text-primary', 'bi-envelope-open'),
+                         'proposal-submitted': ('Submitted', 'text-info', 'bi-check-circle'),
+                         'won': ('Won', 'text-success', 'bi-trophy'),
+                         'lost': ('Lost', 'text-danger', 'bi-x-circle')} %}
+  {% for stage_key in ['pre-release', 'rfp-released', 'proposal-submitted', 'won', 'lost'] %}
+  {% set cnt = capture_stats.plan_by_stage.get(stage_key, 0) %}
+  {% if cnt > 0 %}
+  {% set label_info = stage_labels[stage_key] %}
+  <div class="col-6 col-md-2">
+    <div class="card stat-card h-100" style="cursor:pointer"
+         onclick="location.href='{{ url_for('capture_dashboard') }}'">
+      <div class="card-body text-center">
+        <div class="{{ label_info[1] }}" style="font-size:1.1rem; margin-bottom:2px">
+          <i class="bi {{ label_info[2] }}"></i>
+        </div>
+        <div class="stat-number {{ label_info[1] }}" style="font-size:1.5rem">{{ cnt }}</div>
+        <div class="stat-label">{{ label_info[0] }}</div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+  {% endfor %}
+  {% endif %}
 </div>
 
 <!-- SBIR Capture summary -->

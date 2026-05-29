@@ -1,0 +1,283 @@
+/* ── CaptureIQ Mobile & PWA Styles ─────────────────────────────────────────── */
+
+/* ── Safe area insets (iPhone notch / Dynamic Island) ── */
+#main-content {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* ═══════════════════════════════════════════════════════
+   TABLET: 768px and below
+═══════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+
+  /* Sidebar collapses — show mobile top nav instead */
+  #sidebar {
+    display: none !important;
+  }
+
+  #main-content {
+    margin-left: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Mobile top navigation bar */
+  #mobile-topnav {
+    display: flex !important;
+    position: sticky;
+    top: 0;
+    z-index: 200;
+    background: #1e2023;
+    padding: 10px 16px;
+    align-items: center;
+    gap: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.3);
+  }
+
+  #mobile-topnav .brand {
+    color: #fff;
+    font-weight: 700;
+    font-size: 1rem;
+    flex: 1;
+    letter-spacing: .03em;
+  }
+
+  #mobile-topnav .nav-icon {
+    color: #ccc;
+    font-size: 1.4rem;
+    text-decoration: none;
+    padding: 4px 6px;
+  }
+
+  #mobile-topnav .nav-icon:hover,
+  #mobile-topnav .nav-icon.active {
+    color: #fff;
+  }
+
+  /* Mobile menu drawer */
+  #mobile-menu-drawer {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: #1e2023;
+    z-index: 300;
+    padding: 20px;
+    overflow-y: auto;
+    transform: translateX(-100%);
+    transition: transform .25s ease;
+  }
+
+  #mobile-menu-drawer.open {
+    transform: translateX(0);
+  }
+
+  #mobile-menu-drawer .drawer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #333;
+  }
+
+  #mobile-menu-drawer .drawer-brand {
+    color: #fff;
+    font-weight: 700;
+    font-size: 1.1rem;
+  }
+
+  #mobile-menu-drawer .drawer-close {
+    color: #ccc;
+    background: none;
+    border: none;
+    font-size: 1.6rem;
+    cursor: pointer;
+    padding: 4px 8px;
+  }
+
+  #mobile-menu-drawer .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: #ccc;
+    text-decoration: none;
+    padding: 14px 12px;
+    border-radius: 8px;
+    font-size: .95rem;
+    margin-bottom: 4px;
+  }
+
+  #mobile-menu-drawer .nav-item:hover,
+  #mobile-menu-drawer .nav-item.active {
+    background: #2e3136;
+    color: #fff;
+  }
+
+  #mobile-menu-drawer .nav-section {
+    color: #666;
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    padding: 16px 12px 6px;
+  }
+
+  /* Content area padding on mobile */
+  .content-wrapper {
+    padding: 16px !important;
+  }
+
+  /* Topbar on mobile */
+  .topbar {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 12px 0 8px;
+  }
+
+  .topbar h1 {
+    font-size: 1.1rem;
+  }
+
+  /* Cards stack full width */
+  .stat-card .card-body {
+    padding: 12px 10px !important;
+  }
+
+  .stat-number {
+    font-size: 1.5rem !important;
+  }
+
+  /* Tables: horizontal scroll on mobile */
+  .table-card .table-responsive,
+  .card .table-responsive {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Filter bars stack vertically */
+  .filter-bar .d-flex {
+    flex-direction: column;
+    align-items: stretch !important;
+  }
+
+  .filter-bar input,
+  .filter-bar select {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  /* Buttons: larger touch targets */
+  .btn {
+    min-height: 38px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+
+  .btn-sm {
+    min-height: 32px;
+  }
+
+  /* Modal: full screen on mobile */
+  .modal-dialog {
+    margin: 8px;
+    max-width: calc(100vw - 16px) !important;
+  }
+
+  /* Form controls: larger for touch */
+  .form-control,
+  .form-select {
+    font-size: 16px !important; /* prevents iOS zoom on focus */
+    min-height: 42px;
+  }
+
+  .form-control-sm,
+  .form-select-sm {
+    font-size: 16px !important;
+    min-height: 38px;
+  }
+
+  /* Stat row: 2 columns on mobile */
+  .row.g-3 > .col-6.col-md-2 {
+    flex: 0 0 50%;
+    max-width: 50%;
+  }
+
+  /* Hide non-essential table columns on small screens */
+  .hide-mobile { display: none !important; }
+}
+
+/* ═══════════════════════════════════════════════════════
+   PHONE: 480px and below
+═══════════════════════════════════════════════════════ */
+@media (max-width: 480px) {
+
+  /* Single column stat cards */
+  .row.g-3 > .col-6.col-md-2 {
+    flex: 0 0 100%;
+    max-width: 100%;
+  }
+
+  /* Smaller topbar */
+  .topbar h1 {
+    font-size: 1rem;
+  }
+
+  /* Full-width buttons in action bars */
+  .topbar .btn,
+  .topbar .d-flex .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* Bottom nav bar for quick access */
+  #mobile-bottomnav {
+    display: flex !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   DESKTOP: hide mobile elements
+═══════════════════════════════════════════════════════ */
+@media (min-width: 769px) {
+  #mobile-topnav    { display: none !important; }
+  #mobile-menu-drawer { display: none !important; }
+  #mobile-bottomnav { display: none !important; }
+}
+
+/* ── Mobile Bottom Navigation Bar ───────────────────────────────────────────── */
+#mobile-bottomnav {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0; right: 0;
+  background: #1e2023;
+  border-top: 1px solid #333;
+  z-index: 200;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+#mobile-bottomnav a {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 4px 6px;
+  color: #888;
+  text-decoration: none;
+  font-size: .62rem;
+  gap: 3px;
+}
+
+#mobile-bottomnav a i {
+  font-size: 1.3rem;
+}
+
+#mobile-bottomnav a.active,
+#mobile-bottomnav a:hover {
+  color: #fff;
+}
+
+/* ── PWA standalone mode tweaks ─────────────────────────────────────────────── */
+@media (display-mode: standalone) {
+  /* Add padding at top for status bar in standalone PWA mode */
+  #mobile-topnav {
+    padding-top: max(10px, env(safe-area-inset-top));
+  }
+}

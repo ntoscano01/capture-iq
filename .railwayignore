@@ -1,0 +1,21 @@
+# Don't upload local database files — Railway uses a persistent volume
+*.db
+*.db-journal
+*.db.bak
+
+# Build artifacts
+dist/
+build/
+__pycache__/
+*.pyc
+*.spec
+
+# Local credentials and secrets
+credentials.json
+.env
+
+# Development files
+project_uploads/
+test*.py
+test*.sh
+diagnose.py

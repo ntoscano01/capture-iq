@@ -2,10 +2,23 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>{% block title %}CaptureIQ{% endblock %}</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#003087">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="CaptureIQ">
+  <link rel="apple-touch-icon" href="/static/icons/icon-152x152.png">
+  <link rel="apple-touch-icon" sizes="192x192" href="/static/icons/icon-192x192.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192x192.png">
+
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+  <link href="/static/css/mobile.css" rel="stylesheet">
   <style>
     :root {
       --sidebar-width: 230px;
@@ -124,6 +137,55 @@
   </style>
 </head>
 <body>
+
+<!-- ── Mobile Top Nav (hidden on desktop) ─────────────────────────────────── -->
+<div id="mobile-topnav" style="display:none">
+  <button onclick="openMobileMenu()" style="background:none;border:none;color:#ccc;font-size:1.5rem;padding:4px 6px;cursor:pointer">
+    <i class="bi bi-list"></i>
+  </button>
+  <span class="brand"><i class="bi bi-rocket-takeoff-fill text-warning"></i> CaptureIQ</span>
+  {% if current_user.is_authenticated %}
+  <a href="{{ url_for('notifications') }}" class="nav-icon" title="Notifications">
+    <i class="bi bi-bell"></i>
+  </a>
+  {% endif %}
+</div>
+
+<!-- ── Mobile Drawer Menu (hidden on desktop) ─────────────────────────────── -->
+<div id="mobile-menu-drawer">
+  <div class="drawer-header">
+    <span class="drawer-brand"><i class="bi bi-rocket-takeoff-fill text-warning"></i> CaptureIQ</span>
+    <button class="drawer-close" onclick="closeMobileMenu()">×</button>
+  </div>
+  {% if current_user.is_authenticated %}
+  <div class="nav-section">Pipeline</div>
+  <a href="{{ url_for('dashboard') }}" class="nav-item" onclick="closeMobileMenu()"><i class="bi bi-speedometer2"></i> Dashboard</a>
+  <a href="{{ url_for('topics') }}" class="nav-item" onclick="closeMobileMenu()"><i class="bi bi-lightbulb"></i> Topics</a>
+  <a href="{{ url_for('solicitations') }}" class="nav-item" onclick="closeMobileMenu()"><i class="bi bi-file-earmark-text"></i> Solicitations</a>
+  <a href="{{ url_for('awards') }}" class="nav-item" onclick="closeMobileMenu()"><i class="bi bi-trophy"></i> Awards</a>
+
+  <div class="nav-section">Capture</div>
+  <a href="{{ url_for('projects') }}" class="nav-item" onclick="closeMobileMenu()"><i class="bi bi-folder2-open"></i> Projects</a>
+  <a href="{{ url_for('capture_dashboard') }}" class="nav-item" onclick="closeMobileMenu()"><i class="bi bi-bullseye"></i> Capture Plans</a>
+  <a href="{{ url_for('all_key_contacts') }}" class="nav-item" onclick="closeMobileMenu()"><i class="bi bi-person-lines-fill"></i> Key Contacts</a>
+  <a href="{{ url_for('tasks') }}" class="nav-item" onclick="closeMobileMenu()"><i class="bi bi-check2-square"></i> Tasks</a>
+
+  <div class="nav-section">Account</div>
+  <a href="{{ url_for('notifications') }}" class="nav-item" onclick="closeMobileMenu()"><i class="bi bi-bell"></i> Notifications</a>
+  <a href="{{ url_for('logout') }}" class="nav-item" onclick="closeMobileMenu()"><i class="bi bi-box-arrow-right"></i> Logout ({{ current_user.username }})</a>
+  {% endif %}
+</div>
+
+<!-- ── Mobile Bottom Nav Bar ──────────────────────────────────────────────── -->
+<div id="mobile-bottomnav">
+  {% if current_user.is_authenticated %}
+  <a href="{{ url_for('dashboard') }}" title="Dashboard"><i class="bi bi-speedometer2"></i>Home</a>
+  <a href="{{ url_for('topics') }}" title="Topics"><i class="bi bi-lightbulb"></i>Topics</a>
+  <a href="{{ url_for('projects') }}" title="Projects"><i class="bi bi-folder2-open"></i>Projects</a>
+  <a href="{{ url_for('all_key_contacts') }}" title="Contacts"><i class="bi bi-person-lines-fill"></i>Contacts</a>
+  <a href="{{ url_for('capture_dashboard') }}" title="Capture"><i class="bi bi-bullseye"></i>Capture</a>
+  {% endif %}
+</div>
 
 <!-- Sidebar -->
 <nav id="sidebar">
@@ -418,5 +480,41 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 
 {% block scripts %}{% endblock %}
+
+<script>
+// Mobile menu drawer
+function openMobileMenu() {
+  document.getElementById('mobile-menu-drawer').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+function closeMobileMenu() {
+  document.getElementById('mobile-menu-drawer').classList.remove('open');
+  document.body.style.overflow = '';
+}
+// Close drawer on backdrop tap
+document.getElementById('mobile-menu-drawer').addEventListener('click', function(e) {
+  if (e.target === this) closeMobileMenu();
+});
+// Highlight active bottom nav item
+(function() {
+  var path = window.location.pathname;
+  document.querySelectorAll('#mobile-bottomnav a').forEach(function(a) {
+    if (a.getAttribute('href') === path) a.classList.add('active');
+  });
+})();
+
+// Register PWA service worker
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function() {
+    navigator.serviceWorker.register('/service-worker.js', { scope: '/' })
+      .then(function(reg) {
+        console.log('[PWA] Service worker registered:', reg.scope);
+      })
+      .catch(function(err) {
+        console.warn('[PWA] Service worker registration failed:', err);
+      });
+  });
+}
+</script>
 </body>
 </html>

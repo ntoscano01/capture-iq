@@ -22,10 +22,14 @@ os.environ.setdefault("OAUTHLIB_INSECURE_TRANSPORT", "1")
 app = Flask(__name__)
 app.secret_key = os.environ.get("CAPTUREIQ_SECRET_KEY", "captureiq-local-secret-change-me")
 
+# Detect production mode (set CAPTUREIQ_ENV=production in hosting environment)
+_IS_PRODUCTION = os.environ.get("CAPTUREIQ_ENV", "").lower() == "production"
+
 # Session configuration
-app.config['SESSION_COOKIE_SECURE'] = False  # Set to True in production (HTTPS only)
-app.config['SESSION_COOKIE_HTTPONLY'] = True  # Prevent JavaScript access to session cookie
-app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # CSRF protection
+app.config['SESSION_COOKIE_SECURE'] = _IS_PRODUCTION   # HTTPS only in production
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['PREFERRED_URL_SCHEME'] = 'https' if _IS_PRODUCTION else 'http'
 
 # ── Flask-Login setup ─────────────────────────────────────────────────────────
 
@@ -255,6 +259,8 @@ _USER_ONLY_ENDPOINTS = {
     # Ingest jobs
     "ingest_jobs", "create_ingest_job", "edit_ingest_job", "toggle_ingest_job", "delete_ingest_job",
     "run_ingest_job_now",
+    "add_project_contact", "delete_project_contact", "edit_key_contact",
+    "toggle_contact_lock", "delete_contact_from_list",
 }
 
 # Endpoints that only admins can access
@@ -281,6 +287,25 @@ def enforce_role_routing():
     if not current_user.is_admin and endpoint in _ADMIN_ONLY_ENDPOINTS:
         flash("Admin access required.", "danger")
         return redirect(url_for("dashboard"))
+
+
+# ── PWA Routes ────────────────────────────────────────────────────────────────
+
+@app.route("/service-worker.js")
+def service_worker():
+    """Serve the service worker from root scope (required for full-page caching)."""
+    from flask import send_from_directory
+    response = send_from_directory(app.static_folder, "service-worker.js",
+                                   mimetype="application/javascript")
+    response.headers["Service-Worker-Allowed"] = "/"
+    response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
+@app.route("/offline")
+def offline():
+    """Offline fallback page shown by service worker when network is unavailable."""
+    return render_template("offline.html")
 
 
 # ── Auth — Login / Logout / Setup ─────────────────────────────────────────────
@@ -1435,6 +1460,75 @@ def add_key_contact(plan_id):
     return redirect(url_for("capture_plan_detail", plan_id=plan_id) + "#contacts")
 
 
+@app.route("/projects/<int:project_id>/contacts/add", methods=["POST"])
+@login_required
+def add_project_contact(project_id):
+    """Add a key contact linked directly to a project."""
+    db.add_key_contact(
+        capture_plan_id=None,
+        project_id=project_id,
+        first_name=request.form.get("first_name", "").strip(),
+        last_name=request.form.get("last_name", "").strip(),
+        email=request.form.get("email", "").strip() or None,
+        phone=request.form.get("phone", "").strip() or None,
+        agency=request.form.get("agency", "").strip() or None,
+        title=request.form.get("title", "").strip() or None,
+        notes=request.form.get("notes", "").strip() or None,
+        last_contacted=request.form.get("last_contacted") or None,
+        record_owner_id=current_user.id
+    )
+    flash("Contact added.", "success")
+    return redirect(url_for("project_detail", project_id=project_id) + "#contacts")
+
+
+@app.route("/contacts/<int:contact_id>/edit", methods=["POST"])
+@login_required
+def edit_key_contact(contact_id):
+    """Edit any key contact (project or capture-plan linked). Redirects back to referrer."""
+    with db.get_db() as conn:
+        row = conn.execute("SELECT project_id, capture_plan_id FROM key_contacts WHERE id=?",
+                           (contact_id,)).fetchone()
+    db.update_key_contact(
+        contact_id,
+        first_name=request.form.get("first_name", "").strip(),
+        last_name=request.form.get("last_name", "").strip(),
+        email=request.form.get("email", "").strip() or None,
+        phone=request.form.get("phone", "").strip() or None,
+        agency=request.form.get("agency", "").strip() or None,
+        title=request.form.get("title", "").strip() or None,
+        notes=request.form.get("notes", "").strip() or None,
+        last_contacted=request.form.get("last_contacted") or None,
+        project_id=request.form.get("project_id") or None,
+        capture_plan_id=request.form.get("capture_plan_id") or None,
+    )
+    flash("Contact updated.", "success")
+    # Redirect to wherever the form came from
+    next_url = request.form.get("next") or request.referrer
+    if next_url:
+        return redirect(next_url)
+    if row and row['project_id']:
+        return redirect(url_for("project_detail", project_id=row['project_id']) + "#contacts")
+    if row and row['capture_plan_id']:
+        return redirect(url_for("capture_plan_detail", plan_id=row['capture_plan_id']) + "#contacts")
+    return redirect(url_for("all_key_contacts"))
+
+
+@app.route("/contacts/<int:contact_id>/delete", methods=["POST"])
+@login_required
+def delete_project_contact(contact_id):
+    """Delete a contact linked to a project."""
+    with db.get_db() as conn:
+        row = conn.execute("SELECT project_id, capture_plan_id FROM key_contacts WHERE id=?",
+                           (contact_id,)).fetchone()
+    db.delete_key_contact(contact_id)
+    flash("Contact removed.", "info")
+    if row and row['project_id']:
+        return redirect(url_for("project_detail", project_id=row['project_id']) + "#contacts")
+    if row and row['capture_plan_id']:
+        return redirect(url_for("capture_plan_detail", plan_id=row['capture_plan_id']) + "#contacts")
+    return redirect(url_for("projects"))
+
+
 @app.route("/capture/contacts/<int:contact_id>/delete", methods=["POST"])
 @login_required
 @require_capture_manager
@@ -1447,6 +1541,30 @@ def delete_key_contact(contact_id):
     if plan_id:
         return redirect(url_for("capture_plan_detail", plan_id=plan_id) + "#contacts")
     return redirect(url_for("capture_dashboard"))
+
+
+@app.route("/contacts/<int:contact_id>/toggle-lock", methods=["POST"])
+@login_required
+def toggle_contact_lock(contact_id):
+    """Toggle the lock flag on a contact to prevent accidental deletion."""
+    new_state = db.toggle_contact_lock(contact_id)
+    flash(f"Contact {'locked' if new_state else 'unlocked'}.", "info")
+    next_url = request.form.get("next") or request.referrer
+    return redirect(next_url or url_for("all_key_contacts"))
+
+
+@app.route("/contacts/<int:contact_id>/delete-from-list", methods=["POST"])
+@login_required
+def delete_contact_from_list(contact_id):
+    """Delete a contact from the Key Contacts list view."""
+    with db.get_db() as conn:
+        row = conn.execute("SELECT is_locked FROM key_contacts WHERE id=?", (contact_id,)).fetchone()
+    if row and row['is_locked']:
+        flash("Contact is locked and cannot be deleted. Unlock it first.", "warning")
+    else:
+        db.delete_key_contact(contact_id)
+        flash("Contact deleted.", "info")
+    return redirect(url_for("all_key_contacts"))
 
 
 @app.route("/contacts")
@@ -1470,8 +1588,12 @@ def all_key_contacts():
         sort = 'last_name'
     contacts.sort(key=lambda c: (c.get(sort) or '').lower())
     agencies = sorted({c['agency'] for c in db.get_key_contacts() if c.get('agency')})
+    all_projects = db.get_projects_by_owner(current_user.id)
+    all_capture_plans = db.get_capture_plans_by_user(current_user.id, include_archived=False)
     return render_template("contacts.html", contacts=contacts, agencies=agencies,
-                           search=search, agency=agency, sort=sort)
+                           search=search, agency=agency, sort=sort,
+                           all_projects=all_projects,
+                           all_capture_plans=all_capture_plans)
 
 
 @app.route("/project/<int:project_id>/link-capture-plan", methods=["POST"])
@@ -1965,7 +2087,8 @@ def export_topic_docx(topic_id: int):
 @app.route("/topics")
 @login_required
 def topics():
-    agency       = request.args.get("agency", "")
+    branch       = request.args.get("branch", "")   # component-level filter (Army, NAVAIR, etc.)
+    agency       = request.args.get("agency", "")   # kept for backward-compat URL links
     phase        = request.args.get("phase", "")
     source       = request.args.get("source", "")
     keyword      = request.args.get("keyword", "")
@@ -1976,6 +2099,7 @@ def topics():
     offset       = (page - 1) * per_page
 
     rows = db.get_topics(
+        branch=branch or None,
         agency=agency or None,
         phase=phase or None,
         source=source or None,
@@ -1987,13 +2111,13 @@ def topics():
         user_id=current_user.id,
     )
     filters = {
-        "agencies": db.get_distinct("topics", "agency"),
+        "branches": db.get_distinct("topics", "branch"),   # component names: NAVAIR, USAF, etc.
         "phases":   db.get_distinct("topics", "phase"),
         "sources":  db.get_distinct("topics", "source"),
     }
     return render_template("topics.html",
                            rows=rows, filters=filters, page=page, per_page=per_page,
-                           agency=agency, phase=phase, source=source,
+                           branch=branch, agency=agency, phase=phase, source=source,
                            keyword=keyword, favorited=favorited,
                            topic_status=topic_status)
 
@@ -2420,8 +2544,10 @@ def project_detail(project_id: int):
         cat = item["category"] or "General"
         checklist_groups.setdefault(cat, []).append(item)
 
-    gantt_items  = db.get_checklist_items_for_gantt(project_id)
-    all_users    = db.get_all_users()
+    gantt_items      = db.get_checklist_items_for_gantt(project_id)
+    all_users        = db.get_all_users()
+    project_contacts = db.get_key_contacts(project_id=project_id)
+    all_capture_plans = db.get_capture_plans_by_user(current_user.id, include_archived=False)
 
     return render_template("project_detail.html",
                            project=project,
@@ -2437,7 +2563,9 @@ def project_detail(project_id: int):
                            user_role=g.project_user_role,
                            team_members=team_members,
                            pending_invitations=pending_invitations,
-                           user_pending_invitations=user_pending_invitations)
+                           user_pending_invitations=user_pending_invitations,
+                           project_contacts=project_contacts,
+                           all_capture_plans=all_capture_plans)
 
 
 @app.route("/projects/<int:project_id>/edit", methods=["POST"])
@@ -2940,16 +3068,16 @@ def project_team(project_id: int):
     if not project:
         abort(404)
 
-    # Check access (project members or admins)
-    if not (db.is_project_team_member(project_id, current_user.id) or current_user.is_admin):
+    # Check access: project owner, team members, or admins
+    is_owner = project.get('owner_id') == current_user.id
+    if not (is_owner or db.is_project_team_member(project_id, current_user.id) or current_user.is_admin):
         abort(403)
 
     team_members = db.get_project_team_members(project_id)
     pending_invitations = db.get_project_invitations(project_id, status='pending')
 
-    # Check if current user is project lead or admin (can manage team)
-    can_manage = (project.get('created_by_user_id') == current_user.id or
-                  current_user.is_admin)
+    # Check if current user is project owner or admin (can manage team)
+    can_manage = is_owner or current_user.is_admin
 
     all_users = [u for u in db.get_all_users() if u['is_active']]
     team_ids = {m['user_id'] for m in team_members}
@@ -3303,7 +3431,10 @@ if __name__ == "__main__":
     print("  CaptureIQ")
     print("  Open http://127.0.0.1:5000 in your browser")
     print("="*60 + "\n")
-    app.run(debug=True, host="127.0.0.1", port=5000)
+    host = "0.0.0.0" if _IS_PRODUCTION else "127.0.0.1"
+    debug = not _IS_PRODUCTION
+    port = int(os.environ.get("PORT", 5000))
+    app.run(debug=debug, host=host, port=port)
 
 
 # ── Proposal Scoring & Ranking ───────────────────────────────────────────────
