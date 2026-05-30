@@ -1,0 +1,126 @@
+name: Build Release Packages
+
+# Triggers when you push a version tag: git tag v1.0.0 && git push origin v1.0.0
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+
+  # ── macOS Apple Silicon (M1/M2/M3/M4) ─────────────────────────────────────
+  build-mac-arm64:
+    name: Build macOS Apple Silicon
+    runs-on: macos-14          # GitHub's M1 runner
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build app (arm64)
+        run: |
+          python -m PyInstaller CaptureIQ_mac_arm64.spec --noconfirm
+
+      - name: Package as zip
+        run: |
+          VERSION="${{ github.ref_name }}"
+          cd dist
+          zip -r "../CaptureIQ-macOS-arm64-${VERSION}.zip" CaptureIQ.app
+          cd ..
+          echo "ZIP_NAME=CaptureIQ-macOS-arm64-${VERSION}.zip" >> $GITHUB_ENV
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-arm64
+          path: "*.zip"
+
+  # ── Windows x64 ────────────────────────────────────────────────────────────
+  build-windows:
+    name: Build Windows x64
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build app (Windows)
+        run: |
+          python -m PyInstaller CaptureIQ_windows.spec --noconfirm
+
+      - name: Package as zip
+        shell: pwsh
+        run: |
+          $VERSION = "${{ github.ref_name }}"
+          $ZIP = "CaptureIQ-Windows-x64-${VERSION}.zip"
+          Compress-Archive -Path "dist\CaptureIQ\*" -DestinationPath $ZIP
+          echo "ZIP_NAME=$ZIP" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: "*.zip"
+
+  # ── Create GitHub Release with both zips attached ──────────────────────────
+  create-release:
+    name: Create GitHub Release
+    needs: [build-mac-arm64, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download Mac ARM64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: mac-arm64
+          path: ./release-assets
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-x64
+          path: ./release-assets
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "CaptureIQ ${{ github.ref_name }}"
+          body: |
+            ## CaptureIQ ${{ github.ref_name }}
+
+            ### Downloads
+            | Platform | File |
+            |----------|------|
+            | macOS Apple Silicon (M1/M2/M3/M4) | `CaptureIQ-macOS-arm64-${{ github.ref_name }}.zip` |
+            | Windows 10/11 (64-bit) | `CaptureIQ-Windows-x64-${{ github.ref_name }}.zip` |
+
+            ### Install Instructions
+            **macOS:** Unzip → move `CaptureIQ.app` to `/Applications` → right-click → Open (first launch only)
+            **Windows:** Unzip → run `CaptureIQ.exe` inside the folder
+
+            ### What's new
+            See commit history for changes in this release.
+          files: ./release-assets/*
+          draft: false
+          prerelease: false
